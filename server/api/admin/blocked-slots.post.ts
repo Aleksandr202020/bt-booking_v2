@@ -22,46 +22,50 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = getDb()
-  const activeBookings = body.bookingTime
-    ? await db`
-        SELECT id FROM bookings
-        WHERE booking_date = ${body.bookingDate}
-          AND booking_time = ${body.bookingTime}
-          AND status IN ('pending', 'confirmed')
-        LIMIT 1
-      `
-    : await db`
-        SELECT id FROM bookings
-        WHERE booking_date = ${body.bookingDate}
-          AND status IN ('pending', 'confirmed')
-        LIMIT 1
-      `
+  return db.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${body.bookingDate}`}))`
 
-  if (activeBookings.length) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'ACTIVE_BOOKING_EXISTS',
-      data: { code: 'ACTIVE_BOOKING_EXISTS' },
-    })
-  }
+    const activeBookings = body.bookingTime
+      ? await tx`
+          SELECT id FROM bookings
+          WHERE booking_date = ${body.bookingDate}
+            AND booking_time = ${body.bookingTime}
+            AND status IN ('pending', 'confirmed')
+          LIMIT 1
+        `
+      : await tx`
+          SELECT id FROM bookings
+          WHERE booking_date = ${body.bookingDate}
+            AND status IN ('pending', 'confirmed')
+          LIMIT 1
+        `
 
-  try {
-    const rows = await db`
-      INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
-      VALUES (${body.bookingDate}, ${body.bookingTime ?? null}, ${body.reason}, ${admin.id})
-      RETURNING *
-    `
-    await writeAuditLog({
-      actorId: admin.id,
-      action: 'blocked_slot.created',
-      targetId: rows[0].id,
-      metadata: rows[0],
-    })
-    return { blockedSlot: rows[0] }
-  } catch (error: any) {
-    if (error?.code === '23505') {
-      throw createError({ statusCode: 409, statusMessage: 'SLOT_ALREADY_BLOCKED', data: { code: 'SLOT_ALREADY_BLOCKED' } })
+    if (activeBookings.length) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'ACTIVE_BOOKING_EXISTS',
+        data: { code: 'ACTIVE_BOOKING_EXISTS' },
+      })
     }
-    throw error
-  }
+
+    try {
+      const rows = await tx`
+        INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+        VALUES (${body.bookingDate}, ${body.bookingTime ?? null}, ${body.reason}, ${admin.id})
+        RETURNING *
+      `
+      await writeAuditLog({
+        actorId: admin.id,
+        action: 'blocked_slot.created',
+        targetId: rows[0].id,
+        metadata: rows[0],
+      })
+      return { blockedSlot: rows[0] }
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        throw createError({ statusCode: 409, statusMessage: 'SLOT_ALREADY_BLOCKED', data: { code: 'SLOT_ALREADY_BLOCKED' } })
+      }
+      throw error
+    }
+  })
 })
