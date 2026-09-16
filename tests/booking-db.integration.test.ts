@@ -12,6 +12,9 @@ const email = `booking-test-${suffix}@example.test`
 let userId: string
 let carId: string
 
+type BookingBlockOutcome = 'booking-rejected' | 'booking-created' | 'block-rejected' | 'block-created'
+type BookingHolidayOutcome = 'booking-rejected' | 'booking-created' | 'holiday-rejected' | 'holiday-created'
+
 beforeAll(async () => {
   const [user] = await sql`
     INSERT INTO users (name, email, phone, password_hash)
@@ -138,7 +141,7 @@ describe('PostgreSQL booking integrity', () => {
     const bookingDate = '2099-12-29'
     const bookingTime = '15:00'
 
-    const attemptBooking = async () => sql.begin(async (tx) => {
+    const attemptBooking = async (): Promise<BookingBlockOutcome> => sql.begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
       const blocked = await tx`
         SELECT id FROM blocked_slots
@@ -154,7 +157,7 @@ describe('PostgreSQL booking integrity', () => {
       return 'booking-created'
     })
 
-    const attemptBlock = async () => sql.begin(async (tx) => {
+    const attemptBlock = async (): Promise<BookingBlockOutcome> => sql.begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
       const active = await tx`
         SELECT id FROM bookings
@@ -172,12 +175,12 @@ describe('PostgreSQL booking integrity', () => {
     })
 
     const results = await Promise.all([attemptBooking(), attemptBlock()])
-    const outcome = new Set(results)
-    const validOutcomes = [
-      new Set(['booking-created', 'block-rejected']),
-      new Set(['booking-rejected', 'block-created']),
+    const outcome = new Set<BookingBlockOutcome>(results)
+    const validOutcomes: BookingBlockOutcome[][] = [
+      ['booking-created', 'block-rejected'],
+      ['booking-rejected', 'block-created'],
     ]
-    expect(validOutcomes.some((valid) => valid.size === outcome.size && [...valid].every((value) => outcome.has(value)))).toBe(true)
+    expect(validOutcomes.some((valid) => valid.length === outcome.size && valid.every((value) => outcome.has(value)))).toBe(true)
 
     const bookings = await sql`
       SELECT id FROM bookings
@@ -198,7 +201,7 @@ describe('PostgreSQL booking integrity', () => {
     const bookingDate = '2099-12-28'
     const bookingTime = '16:00'
 
-    const attemptBooking = async () => sql.begin(async (tx) => {
+    const attemptBooking = async (): Promise<BookingHolidayOutcome> => sql.begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
       const holiday = await tx`SELECT id FROM holidays WHERE date = ${bookingDate} AND active = TRUE LIMIT 1`
       if (holiday.length) return 'booking-rejected'
@@ -209,7 +212,7 @@ describe('PostgreSQL booking integrity', () => {
       return 'booking-created'
     })
 
-    const attemptHoliday = async () => sql.begin(async (tx) => {
+    const attemptHoliday = async (): Promise<BookingHolidayOutcome> => sql.begin(async (tx) => {
       await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
       const active = await tx`
         SELECT id FROM bookings
@@ -226,12 +229,12 @@ describe('PostgreSQL booking integrity', () => {
     })
 
     const results = await Promise.all([attemptBooking(), attemptHoliday()])
-    const outcome = new Set(results)
-    const validOutcomes = [
-      new Set(['booking-created', 'holiday-rejected']),
-      new Set(['booking-rejected', 'holiday-created']),
+    const outcome = new Set<BookingHolidayOutcome>(results)
+    const validOutcomes: BookingHolidayOutcome[][] = [
+      ['booking-created', 'holiday-rejected'],
+      ['booking-rejected', 'holiday-created'],
     ]
-    expect(validOutcomes.some((valid) => valid.size === outcome.size && [...valid].every((value) => outcome.has(value)))).toBe(true)
+    expect(validOutcomes.some((valid) => valid.length === outcome.size && valid.every((value) => outcome.has(value)))).toBe(true)
 
     const bookings = await sql`
       SELECT id FROM bookings
