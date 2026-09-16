@@ -1,0 +1,6 @@
+<script setup lang="ts">
+type Log={id:string;action:string;target_id:string|null;metadata:any;created_at:string;actor_name:string|null;actor_email:string|null}
+const logs=ref<Log[]>([]);const error=ref('');const loading=ref(true)
+async function load(){try{logs.value=(await $fetch<{logs:Log[]}>('/api/admin/audit')).logs}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}finally{loading.value=false}}await load()
+</script>
+<template><main class="page"><div class="container"><div class="page-head"><div><h1>Audit log</h1><p>История административных действий</p></div><NuxtLink class="btn" to="/admin">Admin</NuxtLink></div><div v-if="error" class="error">{{error}}</div><div v-if="loading">Загрузка…</div><div v-else class="table-wrap"><table><thead><tr><th>Дата</th><th>Администратор</th><th>Действие</th><th>Target</th><th>Данные</th></tr></thead><tbody><tr v-for="l in logs" :key="l.id"><td>{{new Date(l.created_at).toLocaleString('lv-LV')}}</td><td>{{l.actor_name||'—'}}<br><small>{{l.actor_email||''}}</small></td><td>{{l.action}}</td><td>{{l.target_id||'—'}}</td><td><code>{{JSON.stringify(l.metadata)}}</code></td></tr></tbody></table><p v-if="!logs.length">Записей нет.</p></div></div></main></template>
