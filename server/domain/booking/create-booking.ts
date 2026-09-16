@@ -1,5 +1,5 @@
 import { getDb } from '../../utils/db'
-import { getPriceForCategory } from '../pricing/pricing'
+import { getPriceCents } from '../pricing/pricing'
 import { BOOKING_ERROR_CODES } from './booking-rules'
 import { addCalendarDays, daysBetween, isPastSlot, isValidIsoDate, isWorkingSlot } from './dates'
 
@@ -106,7 +106,7 @@ export async function createBooking(input: {
       if (perCar[0].count >= maxCar) fail(BOOKING_ERROR_CODES.CAR_BOOKING_LIMIT_REACHED)
     }
 
-    const priceCents = getPriceForCategory(car.category)
+    const priceCents = getPriceCents(car.category)
     try {
       const inserted = await tx`
         INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status, notes)
