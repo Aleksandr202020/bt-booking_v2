@@ -1,7 +1,7 @@
 import { getDb } from '../../utils/db'
 import { getPriceCents } from '../pricing/pricing'
 import { BOOKING_ERROR_CODES } from './booking-rules'
-import { addCalendarDays, daysBetween, isPastSlot, isValidIsoDate, isWorkingSlot } from './dates'
+import { addCalendarDays, daysBetween, getRigaNowParts, isPastSlot, isValidIsoDate, isWorkingSlot } from './dates'
 
 const DEFAULT_BOOKING_WINDOW_DAYS = 30
 
@@ -16,12 +16,7 @@ async function getCustomerWindow(now = new Date()) {
   `
   const configured = settings[0]?.value
   const windowDays = typeof configured === 'number' ? configured : DEFAULT_BOOKING_WINDOW_DAYS
-  const today = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Riga',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now)
+  const { date: today } = getRigaNowParts(now)
   return { start: today, end: addCalendarDays(today, windowDays), windowDays }
 }
 
