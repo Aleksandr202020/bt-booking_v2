@@ -15,9 +15,12 @@
   </section>
 </template>
 <script setup lang="ts">
-type Make={id:string;name:string;models:{id:string;name:string;category:string}[]}; const cars=ref<any[]>([]); const catalog=ref<Make[]>([]); const make=ref(''); const model=ref(''); const registrationNumber=ref(''); const saving=ref(false); const error=ref(''); const labels:any={passenger:'Pasažieru auto',crossover:'Crossover / SUV',minivan:'Minivans',commercial:'Komerctransports'}
-const models=computed(()=>catalog.value.find(x=>x.name===make.value)?.models||[])
-async function load(){try{const [c,cat]=await Promise.all([$fetch<any>('/api/cars'),$fetch<any>('/api/cars/catalog')]);cars.value=c.cars;catalog.value=cat.makes}catch(e:any){error.value='Nepieciešams ielogoties.'}}
+type CarModel={id:string;name:string;category:string}
+type Make={id:string;name:string;models:CarModel[]}
+type Car={id:string;make:string;model:string;registration_number:string;category:string}
+const cars=ref<Car[]>([]); const catalog=ref<Make[]>([]); const make=ref(''); const model=ref(''); const registrationNumber=ref(''); const saving=ref(false); const error=ref(''); const labels:Record<string,string>={passenger:'Pasažieru auto',crossover:'Crossover / SUV',minivan:'Minivans',commercial:'Komerctransports'}
+const models=computed<CarModel[]>(()=>catalog.value.find((item:Make)=>item.name===make.value)?.models||[])
+async function load(){try{const [c,cat]=await Promise.all([$fetch<{cars:Car[]}>('/api/cars'),$fetch<{makes:Make[]}>('/api/cars/catalog')]);cars.value=c.cars;catalog.value=cat.makes}catch(e:any){error.value='Nepieciešams ielogoties.'}}
 async function addCar(){saving.value=true;error.value='';try{await $fetch('/api/cars',{method:'POST',body:{make:make.value,model:model.value,registrationNumber:registrationNumber.value}});registrationNumber.value='';await load()}catch(e:any){error.value=e?.data?.statusMessage||'Neizdevās pievienot auto.'}finally{saving.value=false}}
 await load()
 </script>
