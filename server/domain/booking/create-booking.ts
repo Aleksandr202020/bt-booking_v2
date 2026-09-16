@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { getDb } from '../../utils/db'
 import { getPriceCents } from '../pricing/pricing'
 import { BOOKING_ERROR_CODES } from './booking-rules'
