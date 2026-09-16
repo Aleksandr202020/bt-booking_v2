@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// Nuxt auto-imports defineEventHandler in server routes. These tests import
-// handlers directly, so provide the minimal equivalent wrapper.
+// Nuxt auto-imports these helpers in server routes. These tests import
+// handlers directly, so provide the minimal equivalents.
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
+vi.stubGlobal('getRouterParam', (event: { params?: Record<string, string> }, key: string) => event.params?.[key])
+vi.stubGlobal('readBody', async () => ({}))
 
 type User = { role: 'customer' | 'admin'; banned: boolean }
 
@@ -33,8 +35,8 @@ describe('admin and customer security invariants', () => {
   })
 })
 
-async function expectRejected(handler: (event: any) => Promise<unknown>, expected: Record<string, unknown>) {
-  await expect(handler({})).rejects.toMatchObject(expected)
+async function expectRejected(handler: (event: any) => Promise<unknown>, event: any, expected: Record<string, unknown>) {
+  await expect(handler(event)).rejects.toMatchObject(expected)
 }
 
 describe('admin API authorization contracts', () => {
@@ -48,9 +50,9 @@ describe('admin API authorization contracts', () => {
     const { default: handler } = await import('../server/api/admin/bookings.get')
 
     requireAdminMock.mockRejectedValueOnce({ statusCode: 401, statusMessage: 'AUTH_REQUIRED' })
-    await expectRejected(handler, { statusCode: 401, statusMessage: 'AUTH_REQUIRED' })
+    await expectRejected(handler, {}, { statusCode: 401, statusMessage: 'AUTH_REQUIRED' })
     requireAdminMock.mockRejectedValueOnce({ statusCode: 403, statusMessage: 'FORBIDDEN' })
-    await expectRejected(handler, { statusCode: 403, statusMessage: 'FORBIDDEN' })
+    await expectRejected(handler, {}, { statusCode: 403, statusMessage: 'FORBIDDEN' })
     expect(requireAdminMock).toHaveBeenCalledTimes(2)
   })
 
@@ -63,7 +65,7 @@ describe('admin API authorization contracts', () => {
     vi.doMock('h3', () => ({ getRouterParam: vi.fn(), readBody: vi.fn() }))
 
     const { default: handler } = await import('../server/api/admin/users/[id]/ban.post')
-    await expectRejected(handler, { statusCode: 403, statusMessage: 'FORBIDDEN' })
+    await expectRejected(handler, {}, { statusCode: 403, statusMessage: 'FORBIDDEN' })
     expect(dbMock).not.toHaveBeenCalled()
   })
 
@@ -77,7 +79,7 @@ describe('admin API authorization contracts', () => {
     vi.doMock('h3', () => ({ getRouterParam: vi.fn(() => admin.id), readBody: vi.fn(() => ({ reason: 'self-ban test' })) }))
 
     const { default: handler } = await import('../server/api/admin/users/[id]/ban.post')
-    await expectRejected(handler, { statusCode: 403, statusMessage: 'CANNOT_BAN_SELF' })
+    await expectRejected(handler, { params: { id: admin.id } }, { statusCode: 403, statusMessage: 'CANNOT_BAN_SELF' })
     expect(dbMock).not.toHaveBeenCalled()
   })
 
@@ -91,7 +93,7 @@ describe('admin API authorization contracts', () => {
     vi.doMock('h3', () => ({ getRouterParam: vi.fn(() => admin.id) }))
 
     const { default: handler } = await import('../server/api/admin/users/[id]/unban.post')
-    await expectRejected(handler, { statusCode: 403, statusMessage: 'CANNOT_UNBAN_SELF' })
+    await expectRejected(handler, { params: { id: admin.id } }, { statusCode: 403, statusMessage: 'CANNOT_UNBAN_SELF' })
     expect(dbMock).not.toHaveBeenCalled()
   })
 })
