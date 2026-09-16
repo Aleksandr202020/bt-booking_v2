@@ -1,0 +1,6 @@
+<script setup lang="ts">
+const users=ref<any[]>([]);const error=ref('');const loading=ref(true)
+async function load(){try{users.value=(await $fetch<{users:any[]}>('/api/admin/users')).users}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}finally{loading.value=false}}await load()
+async function toggle(u:any){try{await $fetch(`/api/admin/users/${u.id}/ban`,{method:'POST',body:{banned:!u.banned,reason:u.banned?'': 'Администратор заблокировал клиента'}});await load()}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}}
+</script>
+<template><main class="page"><div class="container"><div class="page-head"><div><h1>Customers</h1><p>Клиенты, статус блокировки и контакты</p></div><NuxtLink class="btn" to="/admin">Admin</NuxtLink></div><div v-if="error" class="error">{{error}}</div><div v-if="loading">Загрузка…</div><div v-else class="table-wrap"><table><thead><tr><th>Имя</th><th>Email</th><th>Телефон</th><th>Роль</th><th>Статус</th><th></th></tr></thead><tbody><tr v-for="u in users" :key="u.id"><td>{{u.name}}</td><td>{{u.email}}</td><td>{{u.phone}}</td><td>{{u.role}}</td><td>{{u.banned?'Заблокирован':'Активен'}}</td><td v-if="u.role==='customer'"><button class="btn" @click="toggle(u)">{{u.banned?'Разблокировать':'Заблокировать'}}</button></td><td v-else>—</td></tr></tbody></table></div></div></main></template>
