@@ -9,15 +9,25 @@ function fail(code: string, statusCode = 409): never {
   throw createError({ statusCode, statusMessage: code, data: { code } })
 }
 
-export async function isWithinCustomerBookingWindow(date: string, now = new Date()): Promise<boolean> {
+async function getCustomerWindow(now = new Date()) {
   const db = getDb()
   const settings = await db`
     SELECT value FROM app_settings WHERE key = 'customer_booking_window_days' LIMIT 1
   `
   const configured = settings[0]?.value
   const windowDays = typeof configured === 'number' ? configured : DEFAULT_BOOKING_WINDOW_DAYS
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Riga', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
-  return daysBetween(today, date) >= 0 && daysBetween(today, date) <= windowDays
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Riga',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now)
+  return { start: today, end: addCalendarDays(today, windowDays), windowDays }
+}
+
+export async function isWithinCustomerBookingWindow(date: string, now = new Date()): Promise<boolean> {
+  const { start, end } = await getCustomerWindow(now)
+  return daysBetween(start, date) >= 0 && daysBetween(start, date) <= daysBetween(start, end)
 }
 
 export async function createBooking(input: {
@@ -30,10 +40,11 @@ export async function createBooking(input: {
 }) {
   if (!isValidIsoDate(input.bookingDate)) fail(BOOKING_ERROR_CODES.INVALID_DATE, 400)
   if (!isWorkingSlot(input.bookingTime)) fail(BOOKING_ERROR_CODES.INVALID_SLOT, 400)
-  if (isPastSlot(input.bookingDate, input.bookingTime)) fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE, 409)
+  if (isPastSlot(input.bookingDate, input.bookingTime)) fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
 
-  if (!input.isAdmin && !(await isWithinCustomerBookingWindow(input.bookingDate))) {
-    fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE, 409)
+  const window = !input.isAdmin ? await getCustomerWindow() : null
+  if (window && (daysBetween(window.start, input.bookingDate) < 0 || daysBetween(window.start, input.bookingDate) > window.windowDays)) {
+    fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
   }
 
   const db = getDb()
@@ -68,7 +79,7 @@ export async function createBooking(input: {
     `
     if (blocked.length) fail(BOOKING_ERROR_CODES.SLOT_BLOCKED)
 
-    if (!input.isAdmin) {
+    if (window) {
       const settings = await tx`
         SELECT key, value FROM app_settings
         WHERE key IN ('max_customer_bookings_in_window', 'max_customer_bookings_per_car_in_window')
@@ -76,13 +87,12 @@ export async function createBooking(input: {
       const map = new Map(settings.map((row: any) => [row.key, row.value]))
       const maxTotal = typeof map.get('max_customer_bookings_in_window') === 'number' ? map.get('max_customer_bookings_in_window') : 3
       const maxCar = typeof map.get('max_customer_bookings_per_car_in_window') === 'number' ? map.get('max_customer_bookings_per_car_in_window') : 2
-      const windowEnd = addCalendarDays(input.bookingDate, 30)
 
       const total = await tx`
         SELECT count(*)::int AS count FROM bookings
         WHERE user_id = ${input.userId}
           AND status IN ('pending', 'confirmed')
-          AND booking_date BETWEEN ${input.bookingDate} AND ${windowEnd}
+          AND booking_date BETWEEN ${window.start} AND ${window.end}
       `
       if (total[0].count >= maxTotal) fail(BOOKING_ERROR_CODES.BOOKING_LIMIT_REACHED)
 
@@ -91,7 +101,7 @@ export async function createBooking(input: {
         WHERE user_id = ${input.userId}
           AND car_id = ${input.carId}
           AND status IN ('pending', 'confirmed')
-          AND booking_date BETWEEN ${input.bookingDate} AND ${windowEnd}
+          AND booking_date BETWEEN ${window.start} AND ${window.end}
       `
       if (perCar[0].count >= maxCar) fail(BOOKING_ERROR_CODES.CAR_BOOKING_LIMIT_REACHED)
     }
