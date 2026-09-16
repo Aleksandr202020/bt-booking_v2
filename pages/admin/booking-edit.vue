@@ -3,8 +3,8 @@ type User={id:string;name:string;phone:string;banned:boolean;role:string}
 type Car={id:string;user_id:string;make:string;model:string;registration_number:string;category:string}
 type Booking={id:string;user_id:string;car_id:string;booking_date:string;booking_time:string;status:string;notes:string|null}
 const route=useRoute();const bookingId=String(route.query.id||'');const users=ref<User[]>([]);const cars=ref<Car[]>([]);const booking=ref<Booking|null>(null);const error=ref('');const saving=ref(false)
-const userCars=computed(()=>cars.value.filter(c=>c.user_id===booking.value?.user_id))
-async function load(){try{const [b,u,c]=await Promise.all([$fetch<{bookings:Booking[]}>('/api/admin/bookings'),$fetch<{users:User[]}>('/api/admin/users'),$fetch<{cars:Car[]}>('/api/admin/cars')]);booking.value=b.bookings.find(x=>x.id===bookingId)||null;users.value=u.users;cars.value=c.cars;if(!booking.value)error.value='BOOKING_NOT_FOUND'}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}}
+const userCars=computed(()=>cars.value.filter((c:Car)=>c.user_id===booking.value?.user_id))
+async function load(){try{const [b,u,c]=await Promise.all([$fetch<{bookings:Booking[]}>('/api/admin/bookings'),$fetch<{users:User[]}>('/api/admin/users'),$fetch<{cars:Car[]}>('/api/admin/cars')]);booking.value=b.bookings.find((x:Booking)=>x.id===bookingId)||null;users.value=u.users;cars.value=c.cars;if(!booking.value)error.value='BOOKING_NOT_FOUND'}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}}
 async function save(){if(!booking.value)return;error.value='';saving.value=true;try{await $fetch(`/api/admin/bookings/${bookingId}`,{method:'PATCH',body:{userId:booking.value.user_id,carId:booking.value.car_id,bookingDate:booking.value.booking_date,bookingTime:String(booking.value.booking_time).slice(0,5),status:booking.value.status,notes:booking.value.notes||null}});await navigateTo('/admin/bookings')}catch(e:any){error.value=e?.data?.data?.code||e?.data?.statusMessage||e?.message||'Не удалось сохранить'}finally{saving.value=false}}
 await load()
 </script>
