@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { requireAdmin } from '../../utils/authorization'
+import { writeAuditLog } from '../../utils/audit'
 import { getDb } from '../../utils/db'
+import { isValidIsoDate } from '../../domain/booking/dates'
 
 const schema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -8,15 +10,40 @@ const schema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  await requireAdmin(event)
+  const admin = await requireAdmin(event)
   const body = schema.parse(await readBody(event))
+
+  if (!isValidIsoDate(body.date)) {
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_DATE', data: { code: 'INVALID_DATE' } })
+  }
+
   const db = getDb()
+  const activeBookings = await db`
+    SELECT id FROM bookings
+    WHERE booking_date = ${body.date}
+      AND status IN ('pending', 'confirmed')
+    LIMIT 1
+  `
+  if (activeBookings.length) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'ACTIVE_BOOKING_EXISTS',
+      data: { code: 'ACTIVE_BOOKING_EXISTS' },
+    })
+  }
+
   try {
     const rows = await db`
       INSERT INTO holidays (date, name, active)
       VALUES (${body.date}, ${body.name}, TRUE)
       RETURNING *
     `
+    await writeAuditLog({
+      actorId: admin.id,
+      action: 'holiday.created',
+      targetId: rows[0].id,
+      metadata: rows[0],
+    })
     return { holiday: rows[0] }
   } catch (error: any) {
     if (error?.code === '23505') {
