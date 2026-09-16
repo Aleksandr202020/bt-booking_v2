@@ -9,6 +9,27 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bt_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d bt_booking_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/bt_booking_test
+      SESSION_SECRET: ci-session-secret-change-me
+      APP_URL: http://localhost:3000
+      NODE_ENV: test
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,10 +43,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Apply database migrations
+        run: npm run db:migrate
+
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
+      - name: Unit and integration tests
         run: npm run test
 
       - name: Build
