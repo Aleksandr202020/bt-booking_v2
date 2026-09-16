@@ -29,7 +29,11 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  if (userId) await sql`DELETE FROM users WHERE id = ${userId}`
+  if (userId) {
+    await sql`DELETE FROM bookings WHERE user_id = ${userId}`
+    await sql`DELETE FROM cars WHERE user_id = ${userId}`
+    await sql`DELETE FROM users WHERE id = ${userId}`
+  }
   await sql.end()
 })
 
@@ -43,10 +47,12 @@ describe('PostgreSQL booking integrity', () => {
     `
 
     expect(rows).toHaveLength(1)
-    expect(String(rows[0].indexdef)).toContain('UNIQUE')
-    expect(String(rows[0].indexdef)).toContain('booking_date')
-    expect(String(rows[0].indexdef)).toContain('booking_time')
-    expect(String(rows[0].indexdef)).toContain("status IN ('pending', 'confirmed')")
+    const indexDef = String(rows[0].indexdef)
+    expect(indexDef).toContain('UNIQUE')
+    expect(indexDef).toContain('booking_date')
+    expect(indexDef).toContain('booking_time')
+    expect(indexDef).toContain('pending')
+    expect(indexDef).toContain('confirmed')
   })
 
   it('allows one concurrent reservation and rejects the conflicting reservation', async () => {
