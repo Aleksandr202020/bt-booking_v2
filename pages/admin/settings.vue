@@ -1,0 +1,9 @@
+<script setup lang="ts">
+type Setting={key:string;value:any}
+const settings=ref<Setting[]>([]);const error=ref('');const saving=ref('')
+async function load(){try{settings.value=(await $fetch<{settings:Setting[]}>('/api/admin/settings')).settings}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}}
+function value(key:string){const s=settings.value.find(x=>x.key===key);return Number(s?.value ?? 0)}
+async function save(key:string){error.value='';saving.value=key;try{await $fetch('/api/admin/settings',{method:'PATCH',body:{key,value:value(key)}});await load()}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}finally{saving.value=''}}
+await load()
+</script>
+<template><main class="page"><div class="container"><div class="page-head"><div><h1>Settings</h1><p>Ограничения клиентского бронирования</p></div><NuxtLink class="btn" to="/admin">Admin</NuxtLink></div><div v-if="error" class="error">{{error}}</div><div class="card form-grid"><label>Максимум бронирований клиента в окне<input :value="value('max_customer_bookings_in_window')" type="number" min="1" max="30" @input="settings.find(x=>x.key==='max_customer_bookings_in_window')!.value=Number(($event.target as HTMLInputElement).value)"></label><button class="btn primary" :disabled="saving==='max_customer_bookings_in_window'" @click="save('max_customer_bookings_in_window')">Сохранить</button><label>Максимум бронирований на один автомобиль в окне<input :value="value('max_customer_bookings_per_car_in_window')" type="number" min="1" max="30" @input="settings.find(x=>x.key==='max_customer_bookings_per_car_in_window')!.value=Number(($event.target as HTMLInputElement).value)"></label><button class="btn primary" :disabled="saving==='max_customer_bookings_per_car_in_window'" @click="save('max_customer_bookings_per_car_in_window')">Сохранить</button></div></div></main></template>
