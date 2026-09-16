@@ -172,11 +172,12 @@ describe('PostgreSQL booking integrity', () => {
     })
 
     const results = await Promise.all([attemptBooking(), attemptBlock()])
-    expect(new Set(results).size).toBe(2)
-    expect(results).toContain('booking-created')
-    expect(results).toContain('block-created')
-    expect(results).toContain('booking-rejected')
-    expect(results).toContain('block-rejected')
+    const outcome = new Set(results)
+    const validOutcomes = [
+      new Set(['booking-created', 'block-rejected']),
+      new Set(['booking-rejected', 'block-created']),
+    ]
+    expect(validOutcomes.some((valid) => valid.size === outcome.size && [...valid].every((value) => outcome.has(value)))).toBe(true)
 
     const bookings = await sql`
       SELECT id FROM bookings
@@ -225,11 +226,12 @@ describe('PostgreSQL booking integrity', () => {
     })
 
     const results = await Promise.all([attemptBooking(), attemptHoliday()])
-    expect(new Set(results).size).toBe(2)
-    expect(results).toContain('booking-created')
-    expect(results).toContain('holiday-created')
-    expect(results).toContain('booking-rejected')
-    expect(results).toContain('holiday-rejected')
+    const outcome = new Set(results)
+    const validOutcomes = [
+      new Set(['booking-created', 'holiday-rejected']),
+      new Set(['booking-rejected', 'holiday-created']),
+    ]
+    expect(validOutcomes.some((valid) => valid.size === outcome.size && [...valid].every((value) => outcome.has(value)))).toBe(true)
 
     const bookings = await sql`
       SELECT id FROM bookings
