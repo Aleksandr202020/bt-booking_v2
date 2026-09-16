@@ -1,6 +1,5 @@
 import postgres from 'postgres'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { addCalendarDays, getRigaNowParts } from '../server/domain/booking/dates'
 import { createBooking } from '../server/domain/booking/create-booking'
 import { updateBooking } from '../server/domain/booking/update-booking'
 
@@ -16,8 +15,8 @@ let customerPassengerCarId: string
 let customerCrossoverCarId: string
 let adminCarId: string
 
-const tomorrow = addCalendarDays(getRigaNowParts().date, 1)
-const dayAfter = addCalendarDays(tomorrow, 1)
+const testDate = '2099-11-10'
+const holidayDate = '2099-11-11'
 
 beforeAll(async () => {
   const [customer] = await sql`
@@ -59,7 +58,7 @@ beforeAll(async () => {
 afterEach(async () => {
   await sql`DELETE FROM bookings WHERE user_id IN (${customerId}, ${adminId})`
   await sql`DELETE FROM blocked_slots WHERE created_by = ${adminId}`
-  await sql`DELETE FROM holidays WHERE date IN (${tomorrow}, ${dayAfter})`
+  await sql`DELETE FROM holidays WHERE date IN (${testDate}, ${holidayDate})`
   await sql`
     UPDATE users
     SET banned = FALSE, ban_reason = NULL, banned_at = NULL, updated_at = now()
@@ -70,7 +69,7 @@ afterEach(async () => {
 afterAll(async () => {
   await sql`DELETE FROM audit_logs WHERE actor_id IN (${customerId}, ${adminId}) OR target_id IN (${customerId}, ${adminId})`
   await sql`DELETE FROM blocked_slots WHERE created_by = ${adminId}`
-  await sql`DELETE FROM holidays WHERE date IN (${tomorrow}, ${dayAfter})`
+  await sql`DELETE FROM holidays WHERE date IN (${testDate}, ${holidayDate})`
   await sql`DELETE FROM bookings WHERE user_id IN (${customerId}, ${adminId})`
   await sql`DELETE FROM cars WHERE user_id IN (${customerId}, ${adminId})`
   await sql`DELETE FROM users WHERE id IN (${customerId}, ${adminId})`
@@ -96,7 +95,7 @@ describe('admin booking flow integration', () => {
     const booking = await createBooking({
       userId: customerId,
       carId: customerPassengerCarId,
-      bookingDate: tomorrow,
+      bookingDate: testDate,
       bookingTime: '15:00',
     })
 
@@ -104,7 +103,7 @@ describe('admin booking flow integration', () => {
       bookingId: booking.id,
       userId: customerId,
       carId: customerCrossoverCarId,
-      bookingDate: tomorrow,
+      bookingDate: testDate,
       bookingTime: '16:00',
       status: 'confirmed',
       notes: 'changed by admin',
@@ -120,24 +119,24 @@ describe('admin booking flow integration', () => {
     const booking = await createBooking({
       userId: customerId,
       carId: customerPassengerCarId,
-      bookingDate: tomorrow,
+      bookingDate: testDate,
       bookingTime: '17:00',
     })
 
     await sql`
       INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
-      VALUES (${tomorrow}, '18:00', 'integration test block', ${adminId})
+      VALUES (${testDate}, '18:00', 'integration test block', ${adminId})
     `
     await sql`
       INSERT INTO holidays (date, name, active)
-      VALUES (${dayAfter}, 'Integration Test Holiday', TRUE)
+      VALUES (${holidayDate}, 'Integration Test Holiday', TRUE)
     `
 
     await expect(updateBooking({
       bookingId: booking.id,
       userId: customerId,
       carId: customerPassengerCarId,
-      bookingDate: tomorrow,
+      bookingDate: testDate,
       bookingTime: '18:00',
       status: 'confirmed',
     })).rejects.toMatchObject({ data: { code: 'SLOT_BLOCKED' } })
@@ -146,7 +145,7 @@ describe('admin booking flow integration', () => {
       bookingId: booking.id,
       userId: customerId,
       carId: customerPassengerCarId,
-      bookingDate: dayAfter,
+      bookingDate: holidayDate,
       bookingTime: '10:00',
       status: 'confirmed',
     })).rejects.toMatchObject({ data: { code: 'HOLIDAY' } })
@@ -156,7 +155,7 @@ describe('admin booking flow integration', () => {
     const booking = await createBooking({
       userId: customerId,
       carId: customerPassengerCarId,
-      bookingDate: tomorrow,
+      bookingDate: testDate,
       bookingTime: '19:00',
     })
 
@@ -170,7 +169,7 @@ describe('admin booking flow integration', () => {
       bookingId: booking.id,
       userId: customerId,
       carId: customerPassengerCarId,
-      bookingDate: tomorrow,
+      bookingDate: testDate,
       bookingTime: '20:00',
       status: 'confirmed',
     })).rejects.toMatchObject({ data: { code: 'CLIENT_BANNED' } })
@@ -182,13 +181,13 @@ describe('admin booking flow integration', () => {
       const time = `${String(9 + index).padStart(2, '0')}:00`
       const [row] = await sql`
         INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
-        VALUES (${customerId}, ${customerPassengerCarId}, ${tomorrow}, ${time}, 2500, ${status})
+        VALUES (${customerId}, ${customerPassengerCarId}, ${testDate}, ${time}, 2500, ${status})
         RETURNING id
       `
       const replacement = await createBooking({
         userId: customerId,
         carId: customerPassengerCarId,
-        bookingDate: tomorrow,
+        bookingDate: testDate,
         bookingTime: time,
       })
       expect(replacement.price_cents).toBe(2500)
