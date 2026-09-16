@@ -15,8 +15,15 @@ let customerPassengerCarId: string
 let customerCrossoverCarId: string
 let adminCarId: string
 
-const testDate = '2099-11-10'
-const holidayDate = '2099-11-11'
+function addDaysIso(days: number) {
+  const date = new Date()
+  date.setUTCHours(12, 0, 0, 0)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+const testDate = addDaysIso(3)
+const holidayDate = addDaysIso(4)
 
 beforeAll(async () => {
   const [customer] = await sql`
@@ -193,5 +200,5 @@ describe('admin booking flow integration', () => {
       expect(replacement.price_cents).toBe(2500)
       await sql`DELETE FROM bookings WHERE id IN (${row.id}, ${replacement.id})`
     }
-  })
+  }
 })
