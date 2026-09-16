@@ -88,7 +88,8 @@ describe('PostgreSQL booking integrity', () => {
     expect(successful).toHaveLength(1)
     expect(rejected).toHaveLength(1)
     expect(rejected[0].code).toBe('23505')
-    expect(rejected[0].detail ?? rejected[0].message).toContain('bookings_one_active_slot_idx')
+    expect(rejected[0].detail ?? rejected[0].message).toContain('Key (booking_date, booking_time)')
+    expect(rejected[0].detail ?? rejected[0].message).toContain(`${bookingDate}, ${bookingTime}:00`)
 
     const rows = await sql`
       SELECT id, status
