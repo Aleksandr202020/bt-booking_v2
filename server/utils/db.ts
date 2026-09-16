@@ -11,7 +11,6 @@ export function getDb() {
     sql = postgres(connectionString, {
       max: 5,
       prepare: false,
-      timezone: 'Europe/Riga',
     })
   }
   return sql
