@@ -10,6 +10,10 @@ function fail(code: string, statusCode = 409): never {
   throw createError({ statusCode, statusMessage: code, data: { code } })
 }
 
+function isActiveStatus(status: BookingStatus): boolean {
+  return status === 'pending' || status === 'confirmed'
+}
+
 export async function updateBooking(input: {
   bookingId: string
   userId: string
@@ -37,7 +41,7 @@ export async function updateBooking(input: {
     `
     const targetUser = targetUserRows[0]
     if (!targetUser) throw createError({ statusCode: 404, statusMessage: 'USER_NOT_FOUND', data: { code: 'USER_NOT_FOUND' } })
-    if (targetUser.banned && ACTIVE_BOOKING_STATUSES.includes(input.status)) {
+    if (targetUser.banned && isActiveStatus(input.status)) {
       fail(BOOKING_ERROR_CODES.CLIENT_BANNED, 403)
     }
 
@@ -48,7 +52,7 @@ export async function updateBooking(input: {
     if (!car) fail(BOOKING_ERROR_CODES.CAR_NOT_FOUND, 404)
     if (car.user_id !== input.userId) fail(BOOKING_ERROR_CODES.CAR_NOT_OWNED, 403)
 
-    const active = ACTIVE_BOOKING_STATUSES.includes(input.status)
+    const active = isActiveStatus(input.status)
     if (active) {
       if (isPastSlot(input.bookingDate, input.bookingTime)) fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
 
