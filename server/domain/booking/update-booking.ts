@@ -1,6 +1,7 @@
+import { createError } from 'h3'
 import { getDb } from '../../utils/db'
 import { getPriceCents } from '../pricing/pricing'
-import { BOOKING_ERROR_CODES, ACTIVE_BOOKING_STATUSES } from './booking-rules'
+import { BOOKING_ERROR_CODES } from './booking-rules'
 import { isPastSlot, isValidIsoDate, isWorkingSlot } from './dates'
 
 const STATUS_VALUES = ['pending', 'confirmed', 'completed', 'cancelled_customer', 'cancelled_admin', 'no_show'] as const
