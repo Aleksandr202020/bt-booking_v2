@@ -1,5 +1,5 @@
 import { getDb } from '../../utils/db'
-import { getPriceForCategory } from '../pricing/pricing'
+import { getPriceCents } from '../pricing/pricing'
 import { BOOKING_ERROR_CODES, ACTIVE_BOOKING_STATUSES } from './booking-rules'
 import { isPastSlot, isValidIsoDate, isWorkingSlot } from './dates'
 
@@ -37,7 +37,7 @@ export async function updateBooking(input: {
     `
     const targetUser = targetUserRows[0]
     if (!targetUser) throw createError({ statusCode: 404, statusMessage: 'USER_NOT_FOUND', data: { code: 'USER_NOT_FOUND' } })
-    if (targetUser.banned && ACTIVE_BOOKING_STATUSES.includes(input.status as any)) {
+    if (targetUser.banned && ACTIVE_BOOKING_STATUSES.includes(input.status)) {
       fail(BOOKING_ERROR_CODES.CLIENT_BANNED, 403)
     }
 
@@ -48,7 +48,7 @@ export async function updateBooking(input: {
     if (!car) fail(BOOKING_ERROR_CODES.CAR_NOT_FOUND, 404)
     if (car.user_id !== input.userId) fail(BOOKING_ERROR_CODES.CAR_NOT_OWNED, 403)
 
-    const active = ACTIVE_BOOKING_STATUSES.includes(input.status as any)
+    const active = ACTIVE_BOOKING_STATUSES.includes(input.status)
     if (active) {
       if (isPastSlot(input.bookingDate, input.bookingTime)) fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
 
@@ -73,7 +73,7 @@ export async function updateBooking(input: {
             car_id = ${input.carId},
             booking_date = ${input.bookingDate},
             booking_time = ${input.bookingTime},
-            price_cents = ${getPriceForCategory(car.category)},
+            price_cents = ${getPriceCents(car.category)},
             status = ${input.status},
             notes = ${input.notes ?? null},
             updated_at = now()
