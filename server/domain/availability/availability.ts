@@ -1,5 +1,4 @@
 import { getDb } from '../../utils/db'
-import { getSessionUser } from '../../utils/session'
 import { WORKING_SLOTS } from '../booking/booking-rules'
 import { isPastSlot, isValidIsoDate, isWithinCustomerBookingWindow } from './date-availability'
 
@@ -20,6 +19,8 @@ export async function getSlotAvailability(date: string, userRole: 'customer' | '
   const wholeDayBlock = blocks.some((row: any) => row.booking_time === null)
   const holiday = holidays[0]
   const withinWindow = userRole === 'admin' ? true : await isWithinCustomerBookingWindow(date)
+  const bookingByTime = new Map(bookings.map((row: any) => [String(row.booking_time).slice(0, 5), row]))
+  const blockByTime = new Map(blocks.map((row: any) => [String(row.booking_time).slice(0, 5), row]))
 
   return WORKING_SLOTS.map((time) => {
     let state: SlotState = 'available'
@@ -32,14 +33,14 @@ export async function getSlotAvailability(date: string, userRole: 'customer' | '
       state = 'past'
     } else if (!withinWindow) {
       state = 'outside_booking_window'
-    } else if (wholeDayBlock || blocks.some((row: any) => row.booking_time === time)) {
+    } else if (wholeDayBlock || blockByTime.has(time)) {
       state = 'blocked'
-      reason = blocks.find((row: any) => row.booking_time === time)?.reason
-    } else if (bookings.some((row: any) => row.booking_time === time)) {
+      reason = blockByTime.get(time)?.reason
+    } else if (bookingByTime.has(time)) {
       state = 'booked'
     }
 
-    const booking = bookings.find((row: any) => row.booking_time === time)
+    const booking = bookingByTime.get(time)
     return {
       time,
       state,
