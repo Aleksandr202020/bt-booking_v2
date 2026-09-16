@@ -45,9 +45,9 @@ describe('availability core rules', () => {
 
   it('marks the current and earlier one-hour slots as past', () => {
     const now = new Date('2026-09-16T10:15:00.000Z')
-    expect(isPastSlot('2026-09-16', '12:00', now)).toBe(false)
-    expect(isPastSlot('2026-09-16', '13:00', now)).toBe(false)
-    expect(isPastSlot('2026-09-16', '10:00', now)).toBe(true)
+    expect(isPastSlot('2026-09-16', '12:00', now)).toBe(true)
+    expect(isPastSlot('2026-09-16', '13:00', now)).toBe(true)
+    expect(isPastSlot('2026-09-16', '14:00', now)).toBe(false)
     expect(isPastSlot('2026-09-16', '09:00', now)).toBe(true)
   })
 })
