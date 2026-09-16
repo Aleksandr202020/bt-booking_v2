@@ -1,6 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
+  css: ['~/assets/css/main.css'],
   typescript: { strict: true, typeCheck: true },
   runtimeConfig: {
     databaseUrl: process.env.DATABASE_URL,
