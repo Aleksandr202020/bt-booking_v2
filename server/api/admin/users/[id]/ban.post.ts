@@ -8,16 +8,17 @@ export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
   const userId = getRouterParam(event, 'id')
   if (!userId) throw createError({ statusCode: 400, statusMessage: 'INVALID_USER_ID' })
+  if (userId === admin.id) throw createError({ statusCode: 403, statusMessage: 'CANNOT_BAN_SELF', data: { code: 'CANNOT_BAN_SELF' } })
   const body = schema.parse(await readBody(event))
   const db = getDb()
 
   const rows = await db`
     UPDATE users
     SET banned = TRUE, ban_reason = ${body.reason ?? null}, banned_at = now(), updated_at = now()
-    WHERE id = ${userId}::uuid
+    WHERE id = ${userId}::uuid AND role = 'customer'
     RETURNING id, banned, ban_reason, banned_at
   `
-  if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'USER_NOT_FOUND' })
+  if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CUSTOMER_NOT_FOUND', data: { code: 'CUSTOMER_NOT_FOUND' } })
 
   await db`
     INSERT INTO audit_logs (actor_id, action, target_id, metadata)
