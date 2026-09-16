@@ -1,5 +1,5 @@
 import postgres from 'postgres'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { addCalendarDays, getRigaNowParts } from '../server/domain/booking/dates'
 import { createBooking } from '../server/domain/booking/create-booking'
 import { updateBooking } from '../server/domain/booking/update-booking'
@@ -54,6 +54,17 @@ beforeAll(async () => {
     RETURNING id
   `
   adminCarId = adminCar.id
+})
+
+afterEach(async () => {
+  await sql`DELETE FROM bookings WHERE user_id IN (${customerId}, ${adminId})`
+  await sql`DELETE FROM blocked_slots WHERE created_by = ${adminId}`
+  await sql`DELETE FROM holidays WHERE date IN (${tomorrow}, ${dayAfter})`
+  await sql`
+    UPDATE users
+    SET banned = FALSE, ban_reason = NULL, banned_at = NULL, updated_at = now()
+    WHERE id = ${customerId}
+  `
 })
 
 afterAll(async () => {
@@ -163,12 +174,6 @@ describe('admin booking flow integration', () => {
       bookingTime: '20:00',
       status: 'confirmed',
     })).rejects.toMatchObject({ data: { code: 'CLIENT_BANNED' } })
-
-    await sql`
-      UPDATE users
-      SET banned = FALSE, ban_reason = NULL, banned_at = NULL, updated_at = now()
-      WHERE id = ${customerId}
-    `
   })
 
   it('completed/cancelled/no-show history does not reserve a slot', async () => {
