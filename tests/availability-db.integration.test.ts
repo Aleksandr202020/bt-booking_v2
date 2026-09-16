@@ -11,10 +11,7 @@ const email = `availability-test-${suffix}@example.test`
 const testDate = '2099-11-15'
 let userId: string
 let carId: string
-let bookingId: string | undefined
-let slotBlockId: string | undefined
-let wholeDayBlockId: string | undefined
-let holidayId: string | undefined
+let bookingId: string
 
 beforeAll(async () => {
   const [user] = await sql`
@@ -50,12 +47,10 @@ describe('PostgreSQL availability integration', () => {
     `
     bookingId = booking.id
 
-    const [slotBlock] = await sql`
+    await sql`
       INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
       VALUES (${testDate}, '11:00', 'Integration test slot block', ${userId})
-      RETURNING id
     `
-    slotBlockId = slotBlock.id
 
     const slots = await getSlotAvailability(testDate, 'admin')
     expect(slots).toHaveLength(12)
@@ -76,12 +71,11 @@ describe('PostgreSQL availability integration', () => {
   })
 
   it('marks every slot as blocked for a whole-day block', async () => {
-    const [block] = await sql`
+    await sql`DELETE FROM blocked_slots WHERE booking_date = ${testDate} AND created_by = ${userId}`
+    await sql`
       INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
       VALUES (${testDate}, NULL, 'Integration test whole-day block', ${userId})
-      RETURNING id
     `
-    wholeDayBlockId = block.id
 
     const slots = await getSlotAvailability(testDate, 'admin')
     expect(slots).toHaveLength(12)
@@ -90,16 +84,12 @@ describe('PostgreSQL availability integration', () => {
   })
 
   it('marks every slot as holiday on an active holiday', async () => {
-    await sql`DELETE FROM blocked_slots WHERE id IN (${slotBlockId}, ${wholeDayBlockId})`
-    slotBlockId = undefined
-    wholeDayBlockId = undefined
+    await sql`DELETE FROM blocked_slots WHERE booking_date = ${testDate} AND created_by = ${userId}`
 
-    const [holiday] = await sql`
+    await sql`
       INSERT INTO holidays (date, name, active)
       VALUES (${testDate}, 'Integration Test Holiday', TRUE)
-      RETURNING id
     `
-    holidayId = holiday.id
 
     const slots = await getSlotAvailability(testDate, 'admin')
     expect(slots).toHaveLength(12)
