@@ -7,7 +7,7 @@ const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) throw new Error('DATABASE_URL is required for admin booking integration tests')
 
 const sql = postgres(databaseUrl, { prepare: false })
-const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+const suffix = Date.now().toString() + '-' + Math.random().toString(36).slice(2)
 
 let customerId: string
 let adminId: string
@@ -26,37 +26,43 @@ const testDate = addDaysIso(3)
 const holidayDate = addDaysIso(4)
 
 beforeAll(async () => {
+  const customerEmail = 'admin-flow-customer-' + suffix + '@example.test'
+  const adminEmail = 'admin-flow-admin-' + suffix + '@example.test'
+  const passengerRegistration = 'AF-P-' + suffix
+  const crossoverRegistration = 'AF-C-' + suffix
+  const adminRegistration = 'AF-A-' + suffix
+
   const [customer] = await sql`
     INSERT INTO users (name, email, phone, password_hash, role)
-    VALUES ('Admin Flow Customer', ${`admin-flow-customer-${suffix}@example.test`}, '+37100000001', 'test-only-hash', 'customer')
+    VALUES ('Admin Flow Customer', ${customerEmail}, '+37100000001', 'test-only-hash', 'customer')
     RETURNING id
   `
   customerId = customer.id
 
   const [admin] = await sql`
     INSERT INTO users (name, email, phone, password_hash, role)
-    VALUES ('Admin Flow Admin', ${`admin-flow-admin-${suffix}@example.test`}, '+37100000002', 'test-only-hash', 'admin')
+    VALUES ('Admin Flow Admin', ${adminEmail}, '+37100000002', 'test-only-hash', 'admin')
     RETURNING id
   `
   adminId = admin.id
 
   const [passenger] = await sql`
     INSERT INTO cars (user_id, make, model, registration_number, category)
-    VALUES (${customerId}, 'Test', 'Passenger', ${`AF-P-${suffix}`}, 'passenger')
+    VALUES (${customerId}, 'Test', 'Passenger', ${passengerRegistration}, 'passenger')
     RETURNING id
   `
   customerPassengerCarId = passenger.id
 
   const [crossover] = await sql`
     INSERT INTO cars (user_id, make, model, registration_number, category)
-    VALUES (${customerId}, 'Skoda', 'Kamiq', ${`AF-C-${suffix}`}, 'crossover')
+    VALUES (${customerId}, 'Skoda', 'Kamiq', ${crossoverRegistration}, 'crossover')
     RETURNING id
   `
   customerCrossoverCarId = crossover.id
 
   const [adminCar] = await sql`
     INSERT INTO cars (user_id, make, model, registration_number, category)
-    VALUES (${adminId}, 'Test', 'Admin Vehicle', ${`AF-A-${suffix}`}, 'passenger')
+    VALUES (${adminId}, 'Test', 'Admin Vehicle', ${adminRegistration}, 'passenger')
     RETURNING id
   `
   adminCarId = adminCar.id
@@ -184,21 +190,26 @@ describe('admin booking flow integration', () => {
 
   it('completed/cancelled/no-show history does not reserve a slot', async () => {
     const statuses = ['completed', 'cancelled_admin', 'no_show'] as const
-    for (const [index, status] of statuses.entries()) {
-      const time = `${String(9 + index).padStart(2, '0')}:00`
+
+    for (let index = 0; index < statuses.length; index += 1) {
+      const status = statuses[index]
+      const time = String(9 + index).padStart(2, '0') + ':00'
+
       const [row] = await sql`
         INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
         VALUES (${customerId}, ${customerPassengerCarId}, ${testDate}, ${time}, 2500, ${status})
         RETURNING id
       `
+
       const replacement = await createBooking({
         userId: customerId,
         carId: customerPassengerCarId,
         bookingDate: testDate,
         bookingTime: time,
       })
+
       expect(replacement.price_cents).toBe(2500)
       await sql`DELETE FROM bookings WHERE id IN (${row.id}, ${replacement.id})`
     }
-  }
+  })
 })
