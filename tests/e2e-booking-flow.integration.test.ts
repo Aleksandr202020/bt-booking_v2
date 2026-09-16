@@ -16,6 +16,7 @@ let adminId: string
 let customerCarId: string
 let adminCarId: string
 const testDate = addCalendarDays(getRigaNowParts().date, 1)
+const holidayDate = addCalendarDays(testDate, 1)
 const slot = '15:00'
 
 beforeAll(async () => {
@@ -51,7 +52,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await sql`DELETE FROM bookings WHERE booking_date = ${testDate} AND (user_id = ${customerId} OR user_id = ${adminId})`
   await sql`DELETE FROM blocked_slots WHERE booking_date = ${testDate} AND created_by = ${adminId}`
-  await sql`DELETE FROM holidays WHERE date = ${testDate}`
+  await sql`DELETE FROM holidays WHERE date IN (${testDate}, ${holidayDate})`
   await sql`DELETE FROM cars WHERE id IN (${customerCarId}, ${adminCarId})`
   await sql`DELETE FROM users WHERE id IN (${customerId}, ${adminId})`
   await sql.end()
@@ -107,7 +108,6 @@ describe('end-to-end booking flow', () => {
       bookingTime: '16:00',
     })).rejects.toMatchObject({ statusMessage: 'SLOT_BLOCKED' })
 
-    const holidayDate = addCalendarDays(testDate, 1)
     await sql`
       INSERT INTO holidays (date, name, active)
       VALUES (${holidayDate}, 'Flow Test Holiday', TRUE)
