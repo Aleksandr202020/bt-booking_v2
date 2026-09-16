@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
+// Nuxt auto-imports defineEventHandler in server routes. These tests import
+// handlers directly, so provide the minimal equivalent wrapper.
+vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
+
 type User = { role: 'customer' | 'admin'; banned: boolean }
 
 function requireAdmin(user: User | null) {
@@ -37,46 +41,28 @@ describe('admin API authorization contracts', () => {
   it('GET /api/admin/bookings rejects unauthenticated users and customers before database access', async () => {
     vi.resetModules()
     const requireAdminMock = vi.fn()
-    vi.doMock('../server/utils/authorization', () => ({
-      requireAdmin: requireAdminMock,
-    }))
-    vi.doMock('../server/utils/db', () => ({
-      getDb: vi.fn(() => {
-        throw new Error('database must not be reached')
-      }),
-    }))
-    vi.doMock('h3', () => ({
-      getQuery: vi.fn(() => ({})),
-    }))
+    vi.doMock('../server/utils/authorization', () => ({ requireAdmin: requireAdminMock }))
+    vi.doMock('../server/utils/db', () => ({ getDb: vi.fn(() => { throw new Error('database must not be reached') }) }))
+    vi.doMock('h3', () => ({ getQuery: vi.fn(() => ({})) }))
 
     const { default: handler } = await import('../server/api/admin/bookings.get')
 
     requireAdminMock.mockRejectedValueOnce({ statusCode: 401, statusMessage: 'AUTH_REQUIRED' })
     await expectRejected(handler, { statusCode: 401, statusMessage: 'AUTH_REQUIRED' })
-
     requireAdminMock.mockRejectedValueOnce({ statusCode: 403, statusMessage: 'FORBIDDEN' })
     await expectRejected(handler, { statusCode: 403, statusMessage: 'FORBIDDEN' })
-
     expect(requireAdminMock).toHaveBeenCalledTimes(2)
   })
 
   it('POST /api/admin/users/:id/ban rejects customer access before changing any user', async () => {
     vi.resetModules()
     const requireAdminMock = vi.fn().mockRejectedValue({ statusCode: 403, statusMessage: 'FORBIDDEN' })
-    const dbMock = vi.fn(() => {
-      throw new Error('database must not be reached')
-    })
-    vi.doMock('../server/utils/authorization', () => ({
-      requireAdmin: requireAdminMock,
-    }))
+    const dbMock = vi.fn(() => { throw new Error('database must not be reached') })
+    vi.doMock('../server/utils/authorization', () => ({ requireAdmin: requireAdminMock }))
     vi.doMock('../server/utils/db', () => ({ getDb: () => dbMock }))
-    vi.doMock('h3', () => ({
-      getRouterParam: vi.fn(),
-      readBody: vi.fn(),
-    }))
+    vi.doMock('h3', () => ({ getRouterParam: vi.fn(), readBody: vi.fn() }))
 
     const { default: handler } = await import('../server/api/admin/users/[id]/ban.post')
-
     await expectRejected(handler, { statusCode: 403, statusMessage: 'FORBIDDEN' })
     expect(dbMock).not.toHaveBeenCalled()
   })
@@ -85,20 +71,12 @@ describe('admin API authorization contracts', () => {
     vi.resetModules()
     const admin = { id: '00000000-0000-0000-0000-000000000001' }
     const requireAdminMock = vi.fn().mockResolvedValue(admin)
-    const dbMock = vi.fn(() => {
-      throw new Error('database must not be reached')
-    })
-    vi.doMock('../server/utils/authorization', () => ({
-      requireAdmin: requireAdminMock,
-    }))
+    const dbMock = vi.fn(() => { throw new Error('database must not be reached') })
+    vi.doMock('../server/utils/authorization', () => ({ requireAdmin: requireAdminMock }))
     vi.doMock('../server/utils/db', () => ({ getDb: () => dbMock }))
-    vi.doMock('h3', () => ({
-      getRouterParam: vi.fn(() => admin.id),
-      readBody: vi.fn(() => ({ reason: 'self-ban test' })),
-    }))
+    vi.doMock('h3', () => ({ getRouterParam: vi.fn(() => admin.id), readBody: vi.fn(() => ({ reason: 'self-ban test' })) }))
 
     const { default: handler } = await import('../server/api/admin/users/[id]/ban.post')
-
     await expectRejected(handler, { statusCode: 403, statusMessage: 'CANNOT_BAN_SELF' })
     expect(dbMock).not.toHaveBeenCalled()
   })
@@ -107,19 +85,12 @@ describe('admin API authorization contracts', () => {
     vi.resetModules()
     const admin = { id: '00000000-0000-0000-0000-000000000002' }
     const requireAdminMock = vi.fn().mockResolvedValue(admin)
-    const dbMock = vi.fn(() => {
-      throw new Error('database must not be reached')
-    })
-    vi.doMock('../server/utils/authorization', () => ({
-      requireAdmin: requireAdminMock,
-    }))
+    const dbMock = vi.fn(() => { throw new Error('database must not be reached') })
+    vi.doMock('../server/utils/authorization', () => ({ requireAdmin: requireAdminMock }))
     vi.doMock('../server/utils/db', () => ({ getDb: () => dbMock }))
-    vi.doMock('h3', () => ({
-      getRouterParam: vi.fn(() => admin.id),
-    }))
+    vi.doMock('h3', () => ({ getRouterParam: vi.fn(() => admin.id) }))
 
     const { default: handler } = await import('../server/api/admin/users/[id]/unban.post')
-
     await expectRejected(handler, { statusCode: 403, statusMessage: 'CANNOT_UNBAN_SELF' })
     expect(dbMock).not.toHaveBeenCalled()
   })
