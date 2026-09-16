@@ -30,6 +30,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (userId) {
+    await sql`DELETE FROM blocked_slots WHERE created_by = ${userId}`
     await sql`DELETE FROM bookings WHERE user_id = ${userId}`
     await sql`DELETE FROM cars WHERE user_id = ${userId}`
     await sql`DELETE FROM users WHERE id = ${userId}`
@@ -131,5 +132,116 @@ describe('PostgreSQL booking integrity', () => {
     expect(second.id).toBeTruthy()
 
     await sql`DELETE FROM bookings WHERE id IN (${first.id}, ${second.id})`
+  })
+
+  it('serializes a booking against a concurrent slot block', async () => {
+    const bookingDate = '2099-12-29'
+    const bookingTime = '15:00'
+
+    const attemptBooking = async () => {
+      return sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
+        const blocked = await tx`
+          SELECT id FROM blocked_slots
+          WHERE booking_date = ${bookingDate}
+            AND (booking_time = ${bookingTime} OR booking_time IS NULL)
+          LIMIT 1
+        `
+        if (blocked.length) return 'booking-rejected'
+        await tx`
+          INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
+          VALUES (${userId}, ${carId}, ${bookingDate}, ${bookingTime}, 2500, 'confirmed')
+        `
+        return 'booking-created'
+      })
+    }
+
+    const attemptBlock = async () => {
+      return sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
+        const active = await tx`
+          SELECT id FROM bookings
+          WHERE booking_date = ${bookingDate}
+            AND booking_time = ${bookingTime}
+            AND status IN ('pending', 'confirmed')
+          LIMIT 1
+        `
+        if (active.length) return 'block-rejected'
+        await tx`
+          INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+          VALUES (${bookingDate}, ${bookingTime}, 'concurrency test', ${userId})
+        `
+        return 'block-created'
+      })
+    }
+
+    const results = await Promise.all([attemptBooking(), attemptBlock()])
+    expect(results.sort()).toEqual(['block-created', 'booking-rejected'])
+
+    const bookings = await sql`
+      SELECT id FROM bookings
+      WHERE booking_date = ${bookingDate} AND booking_time = ${bookingTime}
+        AND status IN ('pending', 'confirmed')
+    `
+    const blocks = await sql`
+      SELECT id FROM blocked_slots
+      WHERE booking_date = ${bookingDate} AND booking_time = ${bookingTime}
+    `
+    expect(bookings).toHaveLength(0)
+    expect(blocks).toHaveLength(1)
+
+    await sql`DELETE FROM blocked_slots WHERE booking_date = ${bookingDate} AND booking_time = ${bookingTime}`
+  })
+
+  it('serializes a booking against a concurrent holiday creation', async () => {
+    const bookingDate = '2099-12-28'
+    const bookingTime = '16:00'
+
+    const attemptBooking = async () => {
+      return sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
+        const holiday = await tx`SELECT id FROM holidays WHERE date = ${bookingDate} AND active = TRUE LIMIT 1`
+        if (holiday.length) return 'booking-rejected'
+        await tx`
+          INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
+          VALUES (${userId}, ${carId}, ${bookingDate}, ${bookingTime}, 2500, 'confirmed')
+        `
+        return 'booking-created'
+      })
+    }
+
+    const attemptHoliday = async () => {
+      return sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
+        const active = await tx`
+          SELECT id FROM bookings
+          WHERE booking_date = ${bookingDate}
+            AND status IN ('pending', 'confirmed')
+          LIMIT 1
+        `
+        if (active.length) return 'holiday-rejected'
+        await tx`
+          INSERT INTO holidays (date, name, active)
+          VALUES (${bookingDate}, 'Concurrency test', TRUE)
+        `
+        return 'holiday-created'
+      })
+    }
+
+    const results = await Promise.all([attemptBooking(), attemptHoliday()])
+    expect(results.sort()).toEqual(['booking-created', 'holiday-rejected'])
+
+    const bookings = await sql`
+      SELECT id FROM bookings
+      WHERE booking_date = ${bookingDate} AND status IN ('pending', 'confirmed')
+    `
+    const holidays = await sql`
+      SELECT id FROM holidays WHERE date = ${bookingDate} AND active = TRUE
+    `
+    expect(bookings).toHaveLength(1)
+    expect(holidays).toHaveLength(0)
+
+    await sql`DELETE FROM bookings WHERE booking_date = ${bookingDate}`
+    await sql`DELETE FROM holidays WHERE date = ${bookingDate}`
   })
 })
