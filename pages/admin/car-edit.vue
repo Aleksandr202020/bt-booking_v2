@@ -1,0 +1,11 @@
+<script setup lang="ts">
+type Car={id:string;user_id:string;make:string;model:string;registration_number:string;category:string;customer_name:string}
+type Make={id:string;name:string;models:{id:string;name:string;category:string}[]}
+const route=useRoute();const id=String(route.query.id||'');const car=ref<Car|null>(null);const makes=ref<Make[]>([]);const error=ref('');const saving=ref(false)
+const models=computed(()=>makes.value.find(m=>m.name===car.value?.make)?.models||[])
+async function load(){try{const [c,cat]=await Promise.all([$fetch<{cars:Car[]}>('/api/admin/cars'),$fetch<{makes:Make[]}>('/api/cars/catalog')]);car.value=c.cars.find(x=>x.id===id)||null;makes.value=cat.makes;if(!car.value)error.value='CAR_NOT_FOUND'}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}}
+async function save(){if(!car.value)return;error.value='';saving.value=true;try{await $fetch(`/api/admin/cars/${id}`,{method:'PATCH',body:{make:car.value.make,model:car.value.model,registrationNumber:car.value.registration_number}});await navigateTo('/admin/cars')}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}finally{saving.value=false}}
+async function remove(){if(!confirm('Удалить автомобиль?'))return;try{await $fetch(`/api/admin/cars/${id}`,{method:'DELETE'});await navigateTo('/admin/cars')}catch(e:any){error.value=e?.data?.data?.code||e?.data?.statusMessage||e?.message||'Ошибка'}}
+await load()
+</script>
+<template><main class="page"><div class="container"><div class="page-head"><div><h1>Edit car</h1><p>{{car?.customer_name||''}}</p></div><NuxtLink class="btn" to="/admin/cars">Назад</NuxtLink></div><div v-if="error" class="error">{{error}}</div><div v-if="car" class="card form-grid"><label>Марка<select v-model="car.make"><option v-for="m in makes" :key="m.id" :value="m.name">{{m.name}}</option></select></label><label>Модель<select v-model="car.model"><option v-for="m in models" :key="m.id" :value="m.name">{{m.name}}</option></select></label><label>Регистрационный номер<input v-model="car.registration_number" maxlength="20"></label><div><button class="btn primary" :disabled="saving" @click="save">Сохранить</button> <button class="btn danger" :disabled="saving" @click="remove">Удалить</button></div></div></div></main></template>
