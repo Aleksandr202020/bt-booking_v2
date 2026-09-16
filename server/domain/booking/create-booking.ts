@@ -45,6 +45,10 @@ export async function createBooking(input: {
 
   const db = getDb()
   return db.begin(async (tx) => {
+    // Serialize booking/block/holiday mutations for this date before checking them.
+    // This closes the race where a booking and a new block/holiday could otherwise commit together.
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
+
     const users = await tx`
       SELECT id, banned FROM users WHERE id = ${input.userId} FOR SHARE
     `
