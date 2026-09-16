@@ -72,7 +72,12 @@ describe('PostgreSQL booking integrity', () => {
         `
         return { ok: true as const, id: booking.id }
       } catch (error: any) {
-        return { ok: false as const, code: error?.code, constraint: error?.constraint }
+        return {
+          ok: false as const,
+          code: error?.code,
+          detail: error?.detail,
+          message: error?.message,
+        }
       }
     }
 
@@ -83,7 +88,7 @@ describe('PostgreSQL booking integrity', () => {
     expect(successful).toHaveLength(1)
     expect(rejected).toHaveLength(1)
     expect(rejected[0].code).toBe('23505')
-    expect(rejected[0].constraint).toBe('bookings_one_active_slot_idx')
+    expect(rejected[0].detail ?? rejected[0].message).toContain('bookings_one_active_slot_idx')
 
     const rows = await sql`
       SELECT id, status
