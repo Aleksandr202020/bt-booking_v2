@@ -6,28 +6,34 @@ Production booking system for a single-bay manual car wash in Riga.
 
 Build from business rules and data integrity first: database → constraints → API → authentication/authorization → booking engine → availability → tests → frontend → admin → CI → audit.
 
-Critical invariants:
+## Core invariants
 
 - Timezone: `Europe/Riga`.
 - Working day: 09:00–21:00.
 - Booking slots: 09:00 through 20:00, one hour each.
 - One physical wash bay means one active booking per slot.
-- PostgreSQL must physically prevent double booking.
+- PostgreSQL physically prevents double booking with a partial unique index.
 - Price is calculated server-side and stored as a snapshot in the booking.
-- A car always belongs to a customer; ownership is enforced server-side and by database relationships where practical.
-- Availability is a single backend source of truth and returns all working slots with states such as available, booked, blocked, past, holiday, and outside booking window.
-- Admin manual bookings use the same booking engine and validation rules.
+- Car ownership is enforced server-side and by a composite database foreign key.
+- Availability is a single backend source of truth and returns all working slots with explicit states.
+- Admin manual bookings use the same booking engine.
+- Passwords are stored as Argon2id hashes; sessions are server-side with hashed opaque tokens.
 
 ## Vehicle catalog
 
-The customer car make/model catalog is based on the current passenger-car make/model structure published by SS.COM Latvia (`ss.com/lv/transport/cars/`). The catalog is treated as application seed data, not as a live dependency on SS.COM.
+The customer car make/model catalog is based on the current passenger-car structure published by SS.COM Latvia. The application does not depend on SS.COM during booking; `catalog:sync` creates a local database snapshot. Explicit business classifications include Škoda Kamiq → crossover, Opel Zafira → crossover, Volkswagen Caddy → commercial, Citroen Berlingo → commercial, and Mercedes V-Class → minivan.
 
-The current SS.COM make list includes Alfa Romeo, Audi, BMW, Chevrolet, Chrysler, Citroen, Cupra, Dacia, Dodge, Fiat, Ford, Honda, Hyundai, Jaguar, Jeep, Kia, Lancia, Land Rover, Lexus, Mazda, Mercedes, Mini, Mitsubishi, Nissan, Opel, Peugeot, Porsche, Renault, Saab, Seat, Skoda, Smart, Subaru, Suzuki, Tesla, Toyota, Volkswagen, Volvo, Gaz, Moskvich, Vaz, plus a generic other-make option.
+Source: https://www.ss.com/lv/transport/cars/
 
-Source snapshot: https://www.ss.com/lv/transport/cars/
+## Development
 
-The model catalog will be imported into versioned seed data during the cars/catalog phase. It will not be fetched from SS.COM at booking time.
+1. Configure `DATABASE_URL`.
+2. Run `npm install`.
+3. Run `npm run db:migrate`.
+4. Run `npm run catalog:sync` when a fresh SS.COM catalog snapshot is required.
+5. Run `npm run dev`.
+6. Run `npm run typecheck`, `npm run test`, and `npm run build` before committing a phase.
 
-## Status
+## Current status
 
-Phase 1 — repository initialization and architecture foundation.
+Foundation, database migrations, authentication/session primitives, vehicle catalog, booking engine, availability API, customer car/booking APIs, admin manual booking, blocked slots, holidays, ban/unban, and CI foundation are implemented. Frontend and full integration/concurrency test suite remain later phases.
