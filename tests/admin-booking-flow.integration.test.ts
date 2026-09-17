@@ -536,7 +536,7 @@ describe('admin booking flow integration', () => {
       SELECT status FROM bookings WHERE id = ${booking.id}
     `
     const [block] = await sql`
-      SELECT booking_time
+      SELECT booking_date::text AS booking_date, booking_time
       FROM blocked_slots
       WHERE booking_date = ${testDate} AND booking_time = '18:00' AND created_by = ${adminId}
       LIMIT 1
