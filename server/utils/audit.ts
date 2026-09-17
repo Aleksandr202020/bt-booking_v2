@@ -16,7 +16,6 @@ export async function writeAuditLog(input: AuditInput, client?: SqlClient) {
     VALUES (
       ${input.actorId},
       ${input.targetId ?? null},
-      ${input.targetId ?? null},
       ${JSON.stringify(input.metadata ?? {})}::jsonb
     )
   `
