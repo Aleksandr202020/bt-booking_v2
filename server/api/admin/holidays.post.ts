@@ -35,6 +35,19 @@ export default defineEventHandler(async (event) => {
       })
     }
 
+    const activeBlocks = await tx`
+      SELECT id FROM blocked_slots
+      WHERE booking_date = ${body.date}
+      LIMIT 1
+    `
+    if (activeBlocks.length) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'SLOT_ALREADY_BLOCKED',
+        data: { code: 'SLOT_ALREADY_BLOCKED' },
+      })
+    }
+
     try {
       const rows = await tx`
         INSERT INTO holidays (date, name, active)
