@@ -40,6 +40,8 @@ async function expectRejected(handler: (event: any) => Promise<unknown>, event: 
   await expect(handler(event)).rejects.toMatchObject(expected)
 }
 
+const createErrorMock = (error: Record<string, unknown>) => Object.assign(new Error(String(error.statusMessage ?? 'ERROR')), error)
+
 describe('admin API authorization contracts', () => {
   it('GET /api/admin/bookings rejects unauthenticated users and customers before database access', async () => {
     vi.resetModules()
@@ -77,7 +79,7 @@ describe('admin API authorization contracts', () => {
     const dbMock = vi.fn(() => { throw new Error('database must not be reached') })
     vi.doMock('../server/utils/authorization', () => ({ requireAdmin: requireAdminMock }))
     vi.doMock('../server/utils/db', () => ({ getDb: () => dbMock }))
-    vi.doMock('h3', () => ({ getRouterParam: vi.fn(() => admin.id), readBody: vi.fn(() => ({ reason: 'self-ban test' })) }))
+    vi.doMock('h3', () => ({ getRouterParam: vi.fn(() => admin.id), readBody: vi.fn(() => ({ reason: 'self-ban test' })), createError: createErrorMock }))
 
     const { default: handler } = await import('../server/api/admin/users/[id]/ban.post')
     await expectRejected(handler, { params: { id: admin.id } }, { statusCode: 403, statusMessage: 'CANNOT_BAN_SELF' })
@@ -91,7 +93,7 @@ describe('admin API authorization contracts', () => {
     const dbMock = vi.fn(() => { throw new Error('database must not be reached') })
     vi.doMock('../server/utils/authorization', () => ({ requireAdmin: requireAdminMock }))
     vi.doMock('../server/utils/db', () => ({ getDb: () => dbMock }))
-    vi.doMock('h3', () => ({ getRouterParam: vi.fn(() => admin.id) }))
+    vi.doMock('h3', () => ({ getRouterParam: vi.fn(() => admin.id), createError: createErrorMock }))
 
     const { default: handler } = await import('../server/api/admin/users/[id]/unban.post')
     await expectRejected(handler, { params: { id: admin.id } }, { statusCode: 403, statusMessage: 'CANNOT_UNBAN_SELF' })
