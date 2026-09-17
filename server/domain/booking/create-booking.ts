@@ -49,6 +49,13 @@ export async function createBooking(input: {
     // This closes the race where a booking and a new block/holiday could otherwise commit together.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
 
+    // Customer booking limits span multiple dates, so date-level locking alone is not enough.
+    // Serialize customer reservations by user as well, otherwise two concurrent requests for
+    // different dates could both observe the same remaining limit and both commit.
+    if (!input.isAdmin) {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${input.userId}`}))`
+    }
+
     const users = await tx`
       SELECT id, banned FROM users WHERE id = ${input.userId} FOR SHARE
     `
