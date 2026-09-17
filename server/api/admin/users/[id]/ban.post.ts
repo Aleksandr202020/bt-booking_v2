@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { requireAdmin } from '../../../../utils/authorization'
+import { writeAuditLog } from '../../../../utils/audit'
 import { getDb } from '../../../../utils/db'
 
 const schema = z.object({ reason: z.string().trim().max(500).optional() })
@@ -13,8 +14,6 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
 
   return db.begin(async (tx) => {
-    // Use the same advisory lock as customer booking creation so ban and booking
-    // cannot pass the banned check concurrently for the same customer.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
 
     const rows = await tx`
@@ -25,10 +24,13 @@ export default defineEventHandler(async (event) => {
     `
     if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CUSTOMER_NOT_FOUND', data: { code: 'CUSTOMER_NOT_FOUND' } })
 
-    await tx`
-      INSERT INTO audit_logs (actor_id, action, target_id, metadata)
-      VALUES (${admin.id}, 'BAN_USER', ${userId}::uuid, ${JSON.stringify({ reason: body.reason ?? null })}::jsonb)
-    `
+    await writeAuditLog({
+      actorId: admin.id,
+      action: 'BAN_USER',
+      targetId: userId,
+      metadata: { reason: body.reason ?? null },
+    }, tx)
+
     return { user: rows[0] }
   })
 })
