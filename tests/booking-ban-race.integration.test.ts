@@ -9,8 +9,10 @@ if (!databaseUrl) throw new Error('DATABASE_URL is required for booking-ban race
 const sql = postgres(databaseUrl, { prepare: false })
 const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const email = `booking-ban-${suffix}@example.test`
+const adminEmail = `booking-ban-admin-${suffix}@example.test`
 let userId: string
 let carId: string
+let adminId: string
 
 type BookingBanOutcome = 'booking-created' | 'booking-rejected' | 'ban-created'
 
@@ -28,13 +30,20 @@ beforeAll(async () => {
     RETURNING id
   `
   carId = car.id
+
+  const [admin] = await sql`
+    INSERT INTO users (name, email, phone, password_hash, role)
+    VALUES ('Booking Ban Race Admin', ${adminEmail}, '+37100000004', 'test-only-hash', 'admin')
+    RETURNING id
+  `
+  adminId = admin.id
 })
 
 afterAll(async () => {
-  await sql`DELETE FROM audit_logs WHERE actor_id = ${userId} OR target_id = ${userId}`
+  await sql`DELETE FROM audit_logs WHERE actor_id IN (${userId}, ${adminId}) OR target_id IN (${userId}, ${adminId})`
   await sql`DELETE FROM bookings WHERE user_id = ${userId}`
   await sql`DELETE FROM cars WHERE user_id = ${userId}`
-  await sql`DELETE FROM users WHERE id = ${userId}`
+  await sql`DELETE FROM users WHERE id IN (${userId}, ${adminId})`
   await sql.end()
 })
 
@@ -76,6 +85,80 @@ describe('booking ↔ ban concurrency', () => {
     }
 
     const results = await Promise.allSettled([attemptBooking(), attemptBan()])
+
+    const fulfilled = results
+      .filter((result): result is PromiseFulfilledResult<BookingBanOutcome> => result.status === 'fulfilled')
+      .map((result) => result.value)
+    const rejected = results.filter((result) => result.status === 'rejected')
+
+    expect(rejected).toHaveLength(0)
+    const bookingOutcome: BookingBanOutcome = fulfilled.includes('booking-created')
+      ? 'booking-created'
+      : 'booking-rejected'
+    const outcomeSet: Set<BookingBanOutcome> = new Set(fulfilled)
+    expect(outcomeSet).toEqual(new Set<BookingBanOutcome>([
+      'ban-created',
+      bookingOutcome,
+    ]))
+
+    const [user] = await sql`SELECT banned FROM users WHERE id = ${userId}`
+    expect(user.banned).toBe(true)
+
+    const bookings = await sql`
+      SELECT id FROM bookings
+      WHERE user_id = ${userId}
+        AND booking_date = ${bookingDate}
+        AND booking_time = ${bookingTime}
+        AND status IN ('pending', 'confirmed')
+    `
+
+    if (fulfilled.includes('booking-created')) {
+      expect(bookings).toHaveLength(1)
+    } else {
+      expect(bookings).toHaveLength(0)
+    }
+
+    await sql`DELETE FROM bookings WHERE user_id = ${userId} AND booking_date = ${bookingDate}`
+  })
+
+  it('serializes admin/manual booking creation against a concurrent customer ban', async () => {
+    const { date: today } = getRigaNowParts()
+    const bookingDate = addCalendarDays(today, 2)
+    const bookingTime = '18:00'
+
+    await sql`
+      UPDATE users
+      SET banned = FALSE, ban_reason = NULL, banned_at = NULL, updated_at = now()
+      WHERE id = ${userId}
+    `
+
+    const attemptBan = async (): Promise<BookingBanOutcome> => sql.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
+      await tx`
+        UPDATE users
+        SET banned = TRUE, ban_reason = 'admin booking concurrency test', banned_at = now(), updated_at = now()
+        WHERE id = ${userId}
+      `
+      return 'ban-created' as BookingBanOutcome
+    })
+
+    const attemptAdminBooking = async (): Promise<BookingBanOutcome> => {
+      try {
+        await createBooking({
+          userId,
+          carId,
+          bookingDate,
+          bookingTime,
+          isAdmin: true,
+        })
+        return 'booking-created'
+      } catch (error: any) {
+        if (error?.data?.code === 'CLIENT_BANNED') return 'booking-rejected'
+        throw error
+      }
+    }
+
+    const results = await Promise.allSettled([attemptAdminBooking(), attemptBan()])
 
     const fulfilled = results
       .filter((result): result is PromiseFulfilledResult<BookingBanOutcome> => result.status === 'fulfilled')
