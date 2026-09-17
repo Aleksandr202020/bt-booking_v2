@@ -1,7 +1,7 @@
 import postgres from 'postgres'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createBooking } from '../server/domain/booking/create-booking'
-import { updateBooking } from '../server/domain/booking/update-booking'
+import { cancelAdminBooking, updateBooking } from '../server/domain/booking/update-booking'
 
 const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) throw new Error('DATABASE_URL is required for admin booking integration tests')
@@ -271,5 +271,39 @@ describe('admin booking flow integration', () => {
       expect(String(targetBooking.booking_time).slice(0, 5)).toBe('13:00')
       expect(targetBlock).toBeDefined()
     }
+  })
+
+  it('admin cancellation reloads the booking state atomically instead of using stale data', async () => {
+    const booking = await createBooking({
+      userId: customerId,
+      carId: customerPassengerCarId,
+      bookingDate: testDate,
+      bookingTime: '11:00',
+    })
+
+    const [staleSnapshot] = await sql`
+      SELECT id, user_id, car_id, booking_date, booking_time, notes
+      FROM bookings
+      WHERE id = ${booking.id}
+    `
+
+    await updateBooking({
+      bookingId: booking.id,
+      userId: customerId,
+      carId: customerCrossoverCarId,
+      bookingDate: testDate,
+      bookingTime: '12:00',
+      status: 'confirmed',
+      notes: 'moved before cancellation',
+    })
+
+    expect(String(staleSnapshot.booking_time).slice(0, 5)).toBe('11:00')
+
+    const cancelled = await cancelAdminBooking(booking.id)
+
+    expect(cancelled.status).toBe('cancelled_admin')
+    expect(String(cancelled.booking_time).slice(0, 5)).toBe('12:00')
+    expect(cancelled.car_id).toBe(customerCrossoverCarId)
+    expect(cancelled.notes).toBe('moved before cancellation')
   })
 })
