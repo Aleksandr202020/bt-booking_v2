@@ -31,9 +31,6 @@ export async function updateBooking(input: {
   const active = isActiveStatus(input.status)
 
   return db.begin(async (tx) => {
-    // Serialize active booking updates with create-booking, blocked-slot and holiday mutations.
-    // Acquire the shared target-date lock before locking the booking row so all reservation
-    // mutations use the same lock ordering and cannot deadlock each other.
     if (active) {
       await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
     }
@@ -98,6 +95,38 @@ export async function updateBooking(input: {
       if (error?.code === '23505') fail(BOOKING_ERROR_CODES.SLOT_UNAVAILABLE)
       throw error
     }
+  })
+}
+
+export async function cancelAdminBooking(bookingId: string) {
+  const db = getDb()
+
+  return db.begin(async (tx) => {
+    const existingRows = await tx`
+      SELECT id, user_id, car_id, booking_date, booking_time, status, notes
+      FROM bookings
+      WHERE id = ${bookingId}
+      FOR UPDATE
+    `
+    const booking = existingRows[0]
+    if (!booking) {
+      throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
+    }
+
+    if (!isActiveStatus(booking.status as BookingStatus)) {
+      throw createError({ statusCode: 409, statusMessage: 'BOOKING_NOT_CANCELLABLE', data: { code: 'BOOKING_NOT_CANCELLABLE' } })
+    }
+
+    const rows = await tx`
+      UPDATE bookings
+      SET status = 'cancelled_admin', updated_at = now()
+      WHERE id = ${booking.id} AND status IN ('pending', 'confirmed')
+      RETURNING *
+    `
+    if (!rows.length) {
+      throw createError({ statusCode: 409, statusMessage: 'BOOKING_NOT_CANCELLABLE', data: { code: 'BOOKING_NOT_CANCELLABLE' } })
+    }
+    return rows[0]
   })
 }
 
