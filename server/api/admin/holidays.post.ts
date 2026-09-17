@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
         action: 'holiday.created',
         targetId: rows[0].id,
         metadata: rows[0],
-      })
+      }, tx)
       return { holiday: rows[0] }
     } catch (error: any) {
       if (error?.code === '23505') {
