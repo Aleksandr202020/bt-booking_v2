@@ -28,7 +28,16 @@ export async function updateBooking(input: {
   if (!isWorkingSlot(input.bookingTime)) fail(BOOKING_ERROR_CODES.INVALID_SLOT, 400)
 
   const db = getDb()
+  const active = isActiveStatus(input.status)
+
   return db.begin(async (tx) => {
+    // Serialize active booking updates with create-booking, blocked-slot and holiday mutations.
+    // Acquire the shared target-date lock before locking the booking row so all reservation
+    // mutations use the same lock ordering and cannot deadlock each other.
+    if (active) {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
+    }
+
     const existingRows = await tx`
       SELECT id, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
     `
@@ -42,7 +51,7 @@ export async function updateBooking(input: {
     `
     const targetUser = targetUserRows[0]
     if (!targetUser) throw createError({ statusCode: 404, statusMessage: 'USER_NOT_FOUND', data: { code: 'USER_NOT_FOUND' } })
-    if (targetUser.banned && isActiveStatus(input.status)) {
+    if (targetUser.banned && active) {
       fail(BOOKING_ERROR_CODES.CLIENT_BANNED, 403)
     }
 
@@ -53,7 +62,6 @@ export async function updateBooking(input: {
     if (!car) fail(BOOKING_ERROR_CODES.CAR_NOT_FOUND, 404)
     if (car.user_id !== input.userId) fail(BOOKING_ERROR_CODES.CAR_NOT_OWNED, 403)
 
-    const active = isActiveStatus(input.status)
     if (active) {
       if (isPastSlot(input.bookingDate, input.bookingTime)) fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
 
