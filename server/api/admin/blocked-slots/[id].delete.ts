@@ -1,11 +1,16 @@
+import { z } from 'zod'
 import { requireAdmin } from '../../../utils/authorization'
 import { writeAuditLog } from '../../../utils/audit'
 import { getDb } from '../../../utils/db'
 
+const uuidSchema = z.string().uuid()
+
 export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
   const id = getRouterParam(event, 'id')
-  if (!id) throw createError({ statusCode: 400, statusMessage: 'BLOCKED_SLOT_NOT_FOUND', data: { code: 'BLOCKED_SLOT_NOT_FOUND' } })
+  if (!id || !uuidSchema.safeParse(id).success) {
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_BLOCKED_SLOT_ID', data: { code: 'INVALID_BLOCKED_SLOT_ID' } })
+  }
   const db = getDb()
 
   return db.begin(async (tx) => {
