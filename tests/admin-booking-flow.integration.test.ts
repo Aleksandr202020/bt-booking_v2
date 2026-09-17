@@ -427,7 +427,7 @@ describe('admin booking flow integration', () => {
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
 
     const [targetBooking] = await sql`
-      SELECT booking_date, booking_time
+      SELECT booking_date::text AS booking_date, booking_time
       FROM bookings
       WHERE id = ${booking.id}
     `
@@ -439,10 +439,10 @@ describe('admin booking flow integration', () => {
     `
 
     if (results[0].status === 'fulfilled') {
-      expect(String(targetBooking.booking_date).slice(0, 10)).toBe(holidayDate)
+      expect(String(targetBooking.booking_date)).toBe(holidayDate)
       expect(holiday).toBeUndefined()
     } else {
-      expect(String(targetBooking.booking_date).slice(0, 10)).toBe(testDate)
+      expect(String(targetBooking.booking_date)).toBe(testDate)
       expect(holiday).toBeDefined()
     }
   })
