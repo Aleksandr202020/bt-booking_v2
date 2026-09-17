@@ -32,8 +32,9 @@ export async function updateBooking(input: {
 
   return db.begin(async (tx) => {
     // Lock the booking row first so the current source date is known and cannot become stale.
-    // Then serialize every affected calendar date in a deterministic order. This prevents an
-    // active booking moved from date A to date B from racing with a booking/block/holiday on A.
+    // Then serialize every affected calendar date in a deterministic order. This applies even
+    // when an active booking is changed to an inactive status because that operation frees the
+    // source slot and must be ordered with other calendar mutations on that date.
     const existingRows = await tx`
       SELECT id, booking_date, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
     `
@@ -42,11 +43,9 @@ export async function updateBooking(input: {
       throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
     }
 
-    if (active) {
-      const dates = [String(existing.booking_date).slice(0, 10), input.bookingDate].sort()
-      for (const date of [...new Set(dates)]) {
-        await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${date}`}))`
-      }
+    const dates = [String(existing.booking_date).slice(0, 10), input.bookingDate].sort()
+    for (const date of [...new Set(dates)]) {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${date}`}))`
     }
 
     const targetUserRows = await tx`
@@ -122,6 +121,9 @@ export async function cancelAdminBooking(bookingId: string) {
     if (!isActiveStatus(booking.status as BookingStatus)) {
       throw createError({ statusCode: 409, statusMessage: 'BOOKING_NOT_CANCELLABLE', data: { code: 'BOOKING_NOT_CANCELLABLE' } })
     }
+
+    const bookingDate = String(booking.booking_date).slice(0, 10)
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
 
     const rows = await tx`
       UPDATE bookings
