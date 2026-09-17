@@ -31,16 +31,22 @@ export async function updateBooking(input: {
   const active = isActiveStatus(input.status)
 
   return db.begin(async (tx) => {
-    if (active) {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
-    }
-
+    // Lock the booking row first so the current source date is known and cannot become stale.
+    // Then serialize every affected calendar date in a deterministic order. This prevents an
+    // active booking moved from date A to date B from racing with a booking/block/holiday on A.
     const existingRows = await tx`
-      SELECT id, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
+      SELECT id, booking_date, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
     `
     const existing = existingRows[0]
     if (!existing) {
       throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
+    }
+
+    if (active) {
+      const dates = [String(existing.booking_date).slice(0, 10), input.bookingDate].sort()
+      for (const date of [...new Set(dates)]) {
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${date}`}))`
+      }
     }
 
     const targetUserRows = await tx`
