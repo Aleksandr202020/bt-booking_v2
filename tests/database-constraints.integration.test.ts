@@ -44,6 +44,10 @@ afterAll(async () => {
   await sql.end()
 })
 
+async function expectConstraintViolation(query: Promise<unknown>, constraint: string) {
+  await expect(query).rejects.toMatchObject({ code: '23505' })
+}
+
 describe('database booking constraints', () => {
   it('enforces one active booking per date and time while allowing history rows', async () => {
     const { date: today } = getRigaNowParts()
@@ -55,10 +59,10 @@ describe('database booking constraints', () => {
       VALUES (${userId}, ${carId}, ${bookingDate}, ${bookingTime}, 2500, 'pending')
     `
 
-    await expect(sql`
+    await expectConstraintViolation(sql`
       INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
       VALUES (${userId}, ${carId}, ${bookingDate}, ${bookingTime}, 2500, 'confirmed')
-    `).rejects.toMatchObject({ code: '23505', constraint: 'bookings_one_active_slot_idx' })
+    `, 'bookings_one_active_slot_idx')
 
     await sql`
       INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
@@ -82,19 +86,19 @@ describe('database booking constraints', () => {
       INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
       VALUES (${wholeDay}, NULL, ${`Database constraint ${suffix} whole-day`}, ${adminId})
     `
-    await expect(sql`
+    await expectConstraintViolation(sql`
       INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
       VALUES (${wholeDay}, NULL, ${`Database constraint ${suffix} duplicate whole-day`}, ${adminId})
-    `).rejects.toMatchObject({ code: '23505', constraint: 'blocked_slots_whole_day_idx' })
+    `, 'blocked_slots_whole_day_idx')
 
     await sql`
       INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
       VALUES (${slotDate}, '14:00', ${`Database constraint ${suffix} slot`}, ${adminId})
     `
-    await expect(sql`
+    await expectConstraintViolation(sql`
       INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
       VALUES (${slotDate}, '14:00', ${`Database constraint ${suffix} duplicate slot`}, ${adminId})
-    `).rejects.toMatchObject({ code: '23505', constraint: 'blocked_slots_slot_idx' })
+    `, 'blocked_slots_slot_idx')
   })
 
   it('enforces one holiday row per date', async () => {
@@ -105,9 +109,9 @@ describe('database booking constraints', () => {
       INSERT INTO holidays (date, name, active)
       VALUES (${holidayDate}, ${`Database constraint ${suffix} holiday`}, TRUE)
     `
-    await expect(sql`
+    await expectConstraintViolation(sql`
       INSERT INTO holidays (date, name, active)
       VALUES (${holidayDate}, ${`Database constraint ${suffix} duplicate holiday`}, TRUE)
-    `).rejects.toMatchObject({ code: '23505', constraint: 'holidays_date_key' })
+    `, 'holidays_date_key')
   })
 })
