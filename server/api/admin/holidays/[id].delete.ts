@@ -1,11 +1,15 @@
+import { z } from 'zod'
 import { requireAdmin } from '../../../utils/authorization'
 import { writeAuditLog } from '../../../utils/audit'
 import { getDb } from '../../../utils/db'
 
 export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
+  const uuidSchema = z.string().uuid()
   const id = getRouterParam(event, 'id')
-  if (!id) throw createError({ statusCode: 400, statusMessage: 'HOLIDAY_NOT_FOUND', data: { code: 'HOLIDAY_NOT_FOUND' } })
+  if (!id || !uuidSchema.safeParse(id).success) {
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_HOLIDAY_ID', data: { code: 'INVALID_HOLIDAY_ID' } })
+  }
   const db = getDb()
 
   return db.begin(async (tx) => {
