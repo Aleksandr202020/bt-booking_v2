@@ -74,7 +74,7 @@ describe('admin API authorization contracts', () => {
 
   it('POST /api/admin/users/:id/ban rejects an admin trying to ban themselves', async () => {
     vi.resetModules()
-    const admin = { id: '00000000-0000-0000-0000-000000000001' }
+    const admin = { id: '11111111-1111-4111-8111-111111111111' }
     const requireAdminMock = vi.fn().mockResolvedValue(admin)
     const dbMock = vi.fn(() => { throw new Error('database must not be reached') })
     vi.doMock('../server/utils/authorization', () => ({ requireAdmin: requireAdminMock }))
@@ -88,7 +88,7 @@ describe('admin API authorization contracts', () => {
 
   it('POST /api/admin/users/:id/unban rejects an admin trying to unban themselves', async () => {
     vi.resetModules()
-    const admin = { id: '00000000-0000-0000-0000-000000000002' }
+    const admin = { id: '22222222-2222-4222-8222-222222222222' }
     const requireAdminMock = vi.fn().mockResolvedValue(admin)
     const dbMock = vi.fn(() => { throw new Error('database must not be reached') })
     vi.doMock('../server/utils/authorization', () => ({ requireAdmin: requireAdminMock }))
