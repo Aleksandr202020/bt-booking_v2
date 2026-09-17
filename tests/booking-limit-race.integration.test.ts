@@ -1,5 +1,5 @@
 import postgres from 'postgres'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createBooking } from '../server/domain/booking/create-booking'
 import { addCalendarDays, getRigaNowParts } from '../server/domain/booking/dates'
 
@@ -40,6 +40,10 @@ afterAll(async () => {
   await sql`DELETE FROM cars WHERE user_id = ${customerId}`
   await sql`DELETE FROM users WHERE id = ${customerId}`
   await sql.end()
+})
+
+beforeEach(async () => {
+  await sql`DELETE FROM bookings WHERE user_id = ${customerId}`
 })
 
 function futureDate(days: number) {
