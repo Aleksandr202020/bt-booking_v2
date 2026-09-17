@@ -15,7 +15,8 @@ export default defineEventHandler(async (event) => {
     if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'HOLIDAY_NOT_FOUND', data: { code: 'HOLIDAY_NOT_FOUND' } })
 
     const holiday = rows[0]
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${String(holiday.date).slice(0, 10)}`}))`
+    const date = String(holiday.date).slice(0, 10)
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${date}`}))`
 
     const deleted = await tx`
       DELETE FROM holidays WHERE id = ${id} RETURNING id, date, name
