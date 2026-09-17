@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { getDb } from '../../utils/db'
 import { isPastSlot } from './dates'
 import { BOOKING_ERROR_CODES } from './booking-rules'
+import { writeAuditLog } from '../../utils/audit'
 
 const ACTIVE_STATUSES = ['pending', 'confirmed'] as const
 
@@ -59,6 +60,18 @@ export async function cancelCustomerBooking(bookingId: string, userId: string) {
       })
     }
 
-    return rows[0]
+    const cancelled = rows[0]
+    await writeAuditLog({
+      actorId: userId,
+      action: 'booking.cancelled_customer',
+      targetId: cancelled.id,
+      metadata: {
+        bookingDate: cancelled.booking_date,
+        bookingTime: cancelled.booking_time,
+        previousStatus: booking.status,
+      },
+    }, tx)
+
+    return cancelled
   })
 }
