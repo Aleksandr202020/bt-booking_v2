@@ -15,6 +15,25 @@ function isActiveStatus(status: BookingStatus): boolean {
   return status === 'pending' || status === 'confirmed'
 }
 
+type AuditInput = {
+  actorId: string
+  action: 'booking.updated' | 'booking.cancelled_admin'
+  targetId: string
+  metadata: Record<string, unknown>
+}
+
+async function writeAuditInTransaction(tx: any, input: AuditInput) {
+  await tx`
+    INSERT INTO audit_logs (actor_id, action, target_id, metadata)
+    VALUES (
+      ${input.actorId},
+      ${input.action},
+      ${input.targetId},
+      ${JSON.stringify(input.metadata)}::jsonb
+    )
+  `
+}
+
 export async function updateBooking(input: {
   bookingId: string
   userId: string
@@ -23,6 +42,7 @@ export async function updateBooking(input: {
   bookingTime: string
   status: BookingStatus
   notes?: string | null
+  auditActorId?: string
 }) {
   if (!isValidIsoDate(input.bookingDate)) fail(BOOKING_ERROR_CODES.INVALID_DATE, 400)
   if (!isWorkingSlot(input.bookingTime)) fail(BOOKING_ERROR_CODES.INVALID_SLOT, 400)
@@ -36,7 +56,7 @@ export async function updateBooking(input: {
     // when an active booking is changed to an inactive status because that operation frees the
     // source slot and must be ordered with other calendar mutations on that date.
     const existingRows = await tx`
-      SELECT id, booking_date, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
+      SELECT id, booking_date, booking_time, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
     `
     const existing = existingRows[0]
     if (!existing) {
@@ -95,7 +115,25 @@ export async function updateBooking(input: {
         WHERE id = ${input.bookingId}
         RETURNING *
       `
-      return rows[0]
+      const updated = rows[0]
+
+      if (input.auditActorId) {
+        await writeAuditInTransaction(tx, {
+          actorId: input.auditActorId,
+          action: 'booking.updated',
+          targetId: updated.id,
+          metadata: {
+            status: updated.status,
+            bookingDate: updated.booking_date,
+            bookingTime: updated.booking_time,
+            previousStatus: existing.status,
+            previousBookingDate: existing.booking_date,
+            previousBookingTime: existing.booking_time,
+          },
+        })
+      }
+
+      return updated
     } catch (error: any) {
       if (error?.code === '23505') fail(BOOKING_ERROR_CODES.SLOT_UNAVAILABLE)
       throw error
@@ -103,7 +141,7 @@ export async function updateBooking(input: {
   })
 }
 
-export async function cancelAdminBooking(bookingId: string) {
+export async function cancelAdminBooking(bookingId: string, auditActorId?: string) {
   const db = getDb()
 
   return db.begin(async (tx) => {
@@ -134,7 +172,22 @@ export async function cancelAdminBooking(bookingId: string) {
     if (!rows.length) {
       throw createError({ statusCode: 409, statusMessage: 'BOOKING_NOT_CANCELLABLE', data: { code: 'BOOKING_NOT_CANCELLABLE' } })
     }
-    return rows[0]
+
+    const cancelled = rows[0]
+    if (auditActorId) {
+      await writeAuditInTransaction(tx, {
+        actorId: auditActorId,
+        action: 'booking.cancelled_admin',
+        targetId: cancelled.id,
+        metadata: {
+          bookingDate: cancelled.booking_date,
+          bookingTime: cancelled.booking_time,
+          previousStatus: booking.status,
+        },
+      })
+    }
+
+    return cancelled
   })
 }
 
