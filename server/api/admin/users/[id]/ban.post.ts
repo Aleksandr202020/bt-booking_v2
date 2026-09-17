@@ -12,17 +12,23 @@ export default defineEventHandler(async (event) => {
   const body = schema.parse(await readBody(event))
   const db = getDb()
 
-  const rows = await db`
-    UPDATE users
-    SET banned = TRUE, ban_reason = ${body.reason ?? null}, banned_at = now(), updated_at = now()
-    WHERE id = ${userId}::uuid AND role = 'customer'
-    RETURNING id, banned, ban_reason, banned_at
-  `
-  if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CUSTOMER_NOT_FOUND', data: { code: 'CUSTOMER_NOT_FOUND' } })
+  return db.begin(async (tx) => {
+    // Use the same advisory lock as customer booking creation so ban and booking
+    // cannot pass the banned check concurrently for the same customer.
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
 
-  await db`
-    INSERT INTO audit_logs (actor_id, action, target_id, metadata)
-    VALUES (${admin.id}, 'BAN_USER', ${userId}::uuid, ${JSON.stringify({ reason: body.reason ?? null })}::jsonb)
-  `
-  return { user: rows[0] }
+    const rows = await tx`
+      UPDATE users
+      SET banned = TRUE, ban_reason = ${body.reason ?? null}, banned_at = now(), updated_at = now()
+      WHERE id = ${userId}::uuid AND role = 'customer'
+      RETURNING id, banned, ban_reason, banned_at
+    `
+    if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CUSTOMER_NOT_FOUND', data: { code: 'CUSTOMER_NOT_FOUND' } })
+
+    await tx`
+      INSERT INTO audit_logs (actor_id, action, target_id, metadata)
+      VALUES (${admin.id}, 'BAN_USER', ${userId}::uuid, ${JSON.stringify({ reason: body.reason ?? null })}::jsonb)
+    `
+    return { user: rows[0] }
+  })
 })
