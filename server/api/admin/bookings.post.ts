@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { z } from 'zod'
 import { requireAdmin } from '../../utils/authorization'
 import { createBooking } from '../../domain/booking/create-booking'
@@ -12,13 +13,21 @@ const schema = z.object({
 
 export default defineEventHandler(async (event) => {
   await requireAdmin(event)
-  const body = schema.parse(await readBody(event))
+  const parsed = schema.safeParse(await readBody(event))
+  if (!parsed.success) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'INVALID_BOOKING_REQUEST',
+      data: { code: 'INVALID_BOOKING_REQUEST' },
+    })
+  }
+
   const booking = await createBooking({
-    userId: body.userId,
-    carId: body.carId,
-    bookingDate: body.bookingDate,
-    bookingTime: body.bookingTime,
-    notes: body.notes,
+    userId: parsed.data.userId,
+    carId: parsed.data.carId,
+    bookingDate: parsed.data.bookingDate,
+    bookingTime: parsed.data.bookingTime,
+    notes: parsed.data.notes,
     isAdmin: true,
   })
   return { booking }
