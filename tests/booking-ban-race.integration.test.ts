@@ -55,7 +55,7 @@ describe('booking ↔ ban concurrency', () => {
         SET banned = TRUE, ban_reason = 'concurrency test', banned_at = now(), updated_at = now()
         WHERE id = ${userId}
       `
-      return 'ban-created'
+      return 'ban-created' as BookingBanOutcome
     })
 
     const attemptBooking = async (): Promise<BookingBanOutcome> => {
