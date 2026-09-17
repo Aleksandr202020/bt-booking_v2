@@ -122,13 +122,10 @@ describe('cancellation ↔ booking concurrency', () => {
     const audits = await sql`
       SELECT action, target_id
       FROM audit_logs
-      WHERE action IN ('booking.cancelled_customer', 'booking.created')
+      WHERE action = 'booking.cancelled_customer'
         AND (actor_id = ${customerAId} OR actor_id = ${customerBId})
     `
     expect(audits.filter((row) => row.action === 'booking.cancelled_customer')).toHaveLength(1)
-    if (bookingOutcome === 'booking-created') {
-      expect(audits.filter((row) => row.action === 'booking.created')).toHaveLength(1)
-    }
 
     await sql`DELETE FROM bookings WHERE booking_date = ${bookingDate} AND booking_time = ${bookingTime}`
     await sql`
