@@ -155,8 +155,8 @@ describe('PostgreSQL booking integrity', () => {
       return date.toISOString().slice(0, 10)
     }
 
-    const existingDate = isoDate(2)
-    const concurrentDates = [isoDate(4), isoDate(5)]
+    const existingDate = isoDate(20)
+    const concurrentDates = [isoDate(21), isoDate(22)]
     const originalSetting = await sql`
       SELECT value FROM app_settings WHERE key = 'max_customer_bookings_in_window' LIMIT 1
     `
@@ -184,7 +184,7 @@ describe('PostgreSQL booking integrity', () => {
         }),
         createBooking({
           userId,
-          carId: secondCarId,
+          secondCarId,
           bookingDate: concurrentDates[1],
           bookingTime: '12:00',
         }),
