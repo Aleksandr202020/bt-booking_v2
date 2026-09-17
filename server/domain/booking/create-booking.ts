@@ -45,16 +45,17 @@ export async function createBooking(input: {
 
   const db = getDb()
   return db.begin(async (tx) => {
-    // Serialize booking/block/holiday mutations for this date before checking them.
-    // This closes the race where a booking and a new block/holiday could otherwise commit together.
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
-
-    // Customer booking limits span multiple dates, so date-level locking alone is not enough.
-    // Serialize customer reservations by user as well, otherwise two concurrent requests for
-    // different dates could both observe the same remaining limit and both commit.
+    // Keep lock ordering consistent with booking updates: user first, then date.
+    // This prevents a customer booking (date -> user) from deadlocking with an update
+    // or ban operation (user -> date) for the same customer.
     if (!input.isAdmin) {
       await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${input.userId}`}))`
     }
+
+    // Serialize booking/block/holiday mutations for this date before checking them.
+    // Customer booking also holds the user lock above so booking↔ban and booking-limit
+    // races are serialized without introducing a reverse lock-order deadlock.
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
 
     const users = await tx`
       SELECT id, banned FROM users WHERE id = ${input.userId} FOR SHARE
