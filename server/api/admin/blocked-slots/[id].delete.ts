@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
     `
     if (!deleted.length) throw createError({ statusCode: 404, statusMessage: 'BLOCKED_SLOT_NOT_FOUND', data: { code: 'BLOCKED_SLOT_NOT_FOUND' } })
 
-    await writeAuditLog({ actorId: admin.id, action: 'blocked_slot.deleted', targetId: id, metadata: deleted[0] })
+    await writeAuditLog({ actorId: admin.id, action: 'blocked_slot.deleted', targetId: id, metadata: deleted[0] }, tx)
     return { deleted: true, id }
   })
 })
