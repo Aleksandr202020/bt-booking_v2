@@ -1,11 +1,16 @@
+import { z } from 'zod'
 import { requireAdmin } from '../../../utils/authorization'
 import { getDb } from '../../../utils/db'
 import { writeAuditLog } from '../../../utils/audit'
 
+const uuidSchema = z.string().uuid()
+
 export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
   const id = getRouterParam(event, 'id')
-  if (!id) throw createError({ statusCode: 400, statusMessage: 'CAR_NOT_FOUND' })
+  if (!id || !uuidSchema.safeParse(id).success) {
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_CAR_ID' })
+  }
 
   const db = getDb()
   const active = await db`
