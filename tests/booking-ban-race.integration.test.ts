@@ -81,10 +81,13 @@ describe('booking ↔ ban concurrency', () => {
     const rejected = results.filter((result) => result.status === 'rejected')
 
     expect(rejected).toHaveLength(0)
+    const bookingOutcome: BookingBanOutcome = fulfilled.includes('booking-created')
+      ? 'booking-created'
+      : 'booking-rejected'
     const outcomeSet: Set<BookingBanOutcome> = new Set(fulfilled)
     expect(outcomeSet).toEqual(new Set<BookingBanOutcome>([
       'ban-created',
-      fulfilled.includes('booking-created') ? 'booking-created' : 'booking-rejected',
+      bookingOutcome,
     ]))
 
     const [user] = await sql`SELECT banned FROM users WHERE id = ${userId}`
