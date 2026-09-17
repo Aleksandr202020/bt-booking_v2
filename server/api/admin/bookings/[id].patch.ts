@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { requireAdmin } from '../../../utils/authorization'
-import { writeAuditLog } from '../../../utils/audit'
 import { updateBooking, isValidBookingStatus } from '../../../domain/booking/update-booking'
 
 const schema = z.object({
@@ -26,13 +25,7 @@ export default defineEventHandler(async (event) => {
     bookingTime: body.bookingTime,
     status: body.status,
     notes: body.notes,
-  })
-
-  await writeAuditLog({
-    actorId: admin.id,
-    action: 'booking.updated',
-    targetId: booking.id,
-    metadata: { status: booking.status, bookingDate: booking.booking_date, bookingTime: booking.booking_time },
+    auditActorId: admin.id,
   })
 
   return { booking }
