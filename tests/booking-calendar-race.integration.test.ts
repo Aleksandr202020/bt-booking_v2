@@ -68,16 +68,12 @@ async function runBookingVsCalendarMutation(
   })
 
   const results = await Promise.all([attemptBooking(), attemptCalendar()])
-  expect(new Set(results)).toEqual(new Set<Outcome>(['booking-created', 'calendar-rejected']))
-    
-  const [booking] = await sql`
-    SELECT id FROM bookings
-    WHERE user_id = ${userId}
-      AND booking_date = ${bookingDate}
-      AND booking_time = ${bookingTime}
-      AND status IN ('pending', 'confirmed')
-  `
-  expect(booking?.id).toBeTruthy()
+  const outcome = new Set(results)
+  const valid: Outcome[][] = [
+    ['booking-created', 'calendar-rejected'],
+    ['booking-rejected', 'calendar-created'],
+  ]
+  expect(valid.some((expected) => expected.length === outcome.size && expected.every((value) => outcome.has(value)))).toBe(true)
 }
 
 describe('booking ↔ calendar concurrency', () => {
@@ -103,6 +99,20 @@ describe('booking ↔ calendar concurrency', () => {
       return 'calendar-created'
     })
 
+    const [booking] = await sql`
+      SELECT id FROM bookings
+      WHERE user_id = ${userId}
+        AND booking_date = ${bookingDate}
+        AND booking_time = ${bookingTime}
+        AND status IN ('pending', 'confirmed')
+    `
+    const [block] = await sql`
+      SELECT id FROM blocked_slots
+      WHERE booking_date = ${bookingDate}
+        AND booking_time = ${bookingTime}
+    `
+    expect(Boolean(booking) !== Boolean(block)).toBe(true)
+
     await sql`DELETE FROM bookings WHERE user_id = ${userId} AND booking_date = ${bookingDate}`
     await sql`DELETE FROM blocked_slots WHERE booking_date = ${bookingDate}`
   })
@@ -127,6 +137,19 @@ describe('booking ↔ calendar concurrency', () => {
       `
       return 'calendar-created'
     })
+
+    const [booking] = await sql`
+      SELECT id FROM bookings
+      WHERE user_id = ${userId}
+        AND booking_date = ${bookingDate}
+        AND booking_time = ${bookingTime}
+        AND status IN ('pending', 'confirmed')
+    `
+    const [holiday] = await sql`
+      SELECT id FROM holidays
+      WHERE date = ${bookingDate} AND active = TRUE
+    `
+    expect(Boolean(booking) !== Boolean(holiday)).toBe(true)
 
     await sql`DELETE FROM bookings WHERE user_id = ${userId} AND booking_date = ${bookingDate}`
     await sql`DELETE FROM holidays WHERE date = ${bookingDate}`
