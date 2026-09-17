@@ -155,52 +155,67 @@ describe('PostgreSQL booking integrity', () => {
       return date.toISOString().slice(0, 10)
     }
 
-    const existingDates = [isoDate(2), isoDate(3)]
+    const existingDate = isoDate(2)
     const concurrentDates = [isoDate(4), isoDate(5)]
+    const originalSetting = await sql`
+      SELECT value FROM app_settings WHERE key = 'max_customer_bookings_in_window' LIMIT 1
+    `
 
-    await createBooking({
-      userId,
-      carId,
-      bookingDate: existingDates[0],
-      bookingTime: '09:00',
-    })
-    await createBooking({
-      userId,
-      carId: secondCarId,
-      bookingDate: existingDates[1],
-      bookingTime: '10:00',
-    })
+    await sql`
+      INSERT INTO app_settings (key, value)
+      VALUES ('max_customer_bookings_in_window', '2'::jsonb)
+      ON CONFLICT (key) DO UPDATE SET value = '2'::jsonb
+    `
 
-    const results = await Promise.allSettled([
-      createBooking({
+    try {
+      await createBooking({
         userId,
         carId,
-        bookingDate: concurrentDates[0],
-        bookingTime: '11:00',
-      }),
-      createBooking({
-        userId,
-        carId: secondCarId,
-        bookingDate: concurrentDates[1],
-        bookingTime: '12:00',
-      }),
-    ])
+        bookingDate: existingDate,
+        bookingTime: '09:00',
+      })
 
-    expect(results).toHaveLength(2)
-    expect(results.every((result) => result.status === 'rejected')).toBe(true)
-    expect(results.map((result) => result.status === 'rejected' ? result.reason?.data?.code : null)).toEqual([
-      'BOOKING_LIMIT_REACHED',
-      'BOOKING_LIMIT_REACHED',
-    ])
+      const results = await Promise.allSettled([
+        createBooking({
+          userId,
+          carId,
+          bookingDate: concurrentDates[0],
+          bookingTime: '11:00',
+        }),
+        createBooking({
+          userId,
+          carId: secondCarId,
+          bookingDate: concurrentDates[1],
+          bookingTime: '12:00',
+        }),
+      ])
 
-    const rows = await sql`
-      SELECT booking_date, booking_time
-      FROM bookings
-      WHERE user_id = ${userId}
-        AND status IN ('pending', 'confirmed')
-      ORDER BY booking_date, booking_time
-    `
-    expect(rows).toHaveLength(2)
+      expect(results).toHaveLength(2)
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+      const rejected = results.filter((result) => result.status === 'rejected')
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0].reason?.data?.code).toBe('BOOKING_LIMIT_REACHED')
+
+      const rows = await sql`
+        SELECT booking_date, booking_time
+        FROM bookings
+        WHERE user_id = ${userId}
+          AND status IN ('pending', 'confirmed')
+        ORDER BY booking_date, booking_time
+      `
+      expect(rows).toHaveLength(2)
+    } finally {
+      await sql`DELETE FROM bookings WHERE user_id = ${userId}`
+      if (originalSetting.length) {
+        await sql`
+          UPDATE app_settings
+          SET value = ${originalSetting[0].value}
+          WHERE key = 'max_customer_bookings_in_window'
+        `
+      } else {
+        await sql`DELETE FROM app_settings WHERE key = 'max_customer_bookings_in_window'`
+      }
+    }
   })
 
   it('serializes a booking against a concurrent slot block', async () => {
