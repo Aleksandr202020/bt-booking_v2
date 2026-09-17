@@ -1,6 +1,7 @@
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createBooking } from '../server/domain/booking/create-booking'
+import { addCalendarDays, getRigaNowParts } from '../server/domain/booking/dates'
 
 const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) throw new Error('DATABASE_URL is required for booking-ban race tests')
@@ -39,7 +40,8 @@ afterAll(async () => {
 
 describe('booking ↔ ban concurrency', () => {
   it('serializes booking creation against a concurrent customer ban', async () => {
-    const bookingDate = '2099-12-26'
+    const { date: today } = getRigaNowParts()
+    const bookingDate = addCalendarDays(today, 1)
     const bookingTime = '17:00'
 
     await sql`
