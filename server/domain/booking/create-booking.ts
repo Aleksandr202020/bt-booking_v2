@@ -45,16 +45,11 @@ export async function createBooking(input: {
 
   const db = getDb()
   return db.begin(async (tx) => {
-    // Keep lock ordering consistent with booking updates: user first, then date.
-    // This prevents a customer booking (date -> user) from deadlocking with an update
-    // or ban operation (user -> date) for the same customer.
-    if (!input.isAdmin) {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${input.userId}`}))`
-    }
+    // Every booking mutation uses the same user -> date lock order, including admin/manual booking.
+    // This keeps booking↔ban/unban and booking↔update races on one deterministic lock path.
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${input.userId}`}))`
 
     // Serialize booking/block/holiday mutations for this date before checking them.
-    // Customer booking also holds the user lock above so booking↔ban and booking-limit
-    // races are serialized without introducing a reverse lock-order deadlock.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
 
     const users = await tx`
