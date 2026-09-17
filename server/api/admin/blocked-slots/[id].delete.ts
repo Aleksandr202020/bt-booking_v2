@@ -7,10 +7,22 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'BLOCKED_SLOT_NOT_FOUND', data: { code: 'BLOCKED_SLOT_NOT_FOUND' } })
   const db = getDb()
-  const rows = await db`
-    DELETE FROM blocked_slots WHERE id = ${id} RETURNING id, booking_date, booking_time
-  `
-  if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'BLOCKED_SLOT_NOT_FOUND', data: { code: 'BLOCKED_SLOT_NOT_FOUND' } })
-  await writeAuditLog({ actorId: admin.id, action: 'blocked_slot.deleted', targetId: id, metadata: rows[0] })
-  return { deleted: true, id }
+
+  return db.begin(async (tx) => {
+    const rows = await tx`
+      SELECT id, booking_date, booking_time FROM blocked_slots WHERE id = ${id} FOR UPDATE
+    `
+    if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'BLOCKED_SLOT_NOT_FOUND', data: { code: 'BLOCKED_SLOT_NOT_FOUND' } })
+
+    const block = rows[0]
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${String(block.booking_date).slice(0, 10)}`}))`
+
+    const deleted = await tx`
+      DELETE FROM blocked_slots WHERE id = ${id} RETURNING id, booking_date, booking_time
+    `
+    if (!deleted.length) throw createError({ statusCode: 404, statusMessage: 'BLOCKED_SLOT_NOT_FOUND', data: { code: 'BLOCKED_SLOT_NOT_FOUND' } })
+
+    await writeAuditLog({ actorId: admin.id, action: 'blocked_slot.deleted', targetId: id, metadata: deleted[0] })
+    return { deleted: true, id }
+  })
 })
