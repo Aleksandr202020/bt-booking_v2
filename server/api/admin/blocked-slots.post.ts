@@ -25,6 +25,19 @@ export default defineEventHandler(async (event) => {
   return db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${body.bookingDate}`}))`
 
+    const holiday = await tx`
+      SELECT id FROM holidays
+      WHERE date = ${body.bookingDate} AND active = TRUE
+      LIMIT 1
+    `
+    if (holiday.length) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'HOLIDAY',
+        data: { code: 'HOLIDAY' },
+      })
+    }
+
     const activeBookings = body.bookingTime
       ? await tx`
           SELECT id FROM bookings
