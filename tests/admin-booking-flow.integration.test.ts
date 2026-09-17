@@ -212,4 +212,64 @@ describe('admin booking flow integration', () => {
       await sql`DELETE FROM bookings WHERE id IN (${row.id}, ${replacement.id})`
     }
   })
+
+  it('active booking update and slot blocking are serialized by the shared date lock', async () => {
+    const booking = await createBooking({
+      userId: customerId,
+      carId: customerPassengerCarId,
+      bookingDate: testDate,
+      bookingTime: '13:00',
+    })
+
+    const blockResult = sql.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${testDate}`}))`
+      const activeBooking = await tx`
+        SELECT 1
+        FROM bookings
+        WHERE booking_date = ${testDate}
+          AND booking_time = '14:00'
+          AND status IN ('pending', 'confirmed')
+        LIMIT 1
+      `
+      if (activeBooking.length) throw new Error('ACTIVE_BOOKING_EXISTS')
+      await tx`
+        INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+        VALUES (${testDate}, '14:00', 'concurrency integration test', ${adminId})
+      `
+      return 'blocked' as const
+    })
+
+    const updateResult = updateBooking({
+      bookingId: booking.id,
+      userId: customerId,
+      carId: customerPassengerCarId,
+      bookingDate: testDate,
+      bookingTime: '14:00',
+      status: 'confirmed',
+    })
+
+    const results = await Promise.allSettled([updateResult, blockResult])
+    const fulfilled = results.filter((result) => result.status === 'fulfilled')
+    const rejected = results.filter((result) => result.status === 'rejected')
+
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+
+    const [targetBooking] = await sql`
+      SELECT booking_time FROM bookings WHERE id = ${booking.id}
+    `
+    const [targetBlock] = await sql`
+      SELECT booking_time FROM blocked_slots
+      WHERE booking_date = ${testDate} AND booking_time = '14:00' AND created_by = ${adminId}
+      LIMIT 1
+    `
+
+    if (results[0].status === 'fulfilled') {
+      expect(String(targetBooking.booking_time).slice(0, 5)).toBe('14:00')
+      expect(targetBlock).toBeUndefined()
+    } else {
+      expect(String(targetBooking.booking_time).slice(0, 5)).toBe('13:00')
+      expect(targetBlock).toBeDefined()
+    }
+  })
 })
