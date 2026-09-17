@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
 vi.stubGlobal('getRouterParam', (event: { params?: Record<string, string> }, key: string) => event.params?.[key])
 vi.stubGlobal('readBody', async () => ({}))
+vi.stubGlobal('createError', (error: Record<string, unknown>) => Object.assign(new Error(String(error.statusMessage ?? 'ERROR')), error))
 
 type User = { role: 'customer' | 'admin'; banned: boolean }
 
