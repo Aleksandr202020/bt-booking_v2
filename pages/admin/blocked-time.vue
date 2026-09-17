@@ -1,6 +1,7 @@
 <script setup lang="ts">
 type Block={id:string;booking_date:string;booking_time:string|null;reason:string}
-const blocks=ref<Block[]>([]);const date=ref(new Date().toISOString().slice(0,10));const time=ref('');const reason=ref('');const error=ref('');const loading=ref(false)
+function rigaToday(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Riga',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
+const blocks=ref<Block[]>([]);const date=ref(rigaToday());const time=ref('');const reason=ref('');const error=ref('');const loading=ref(false)
 async function load(){try{blocks.value=(await $fetch<{blockedSlots:Block[]}>('/api/admin/blocked-slots')).blockedSlots}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}}
 async function add(){error.value='';if(!reason.value.trim()){error.value='Укажите причину блокировки';return}loading.value=true;try{await $fetch('/api/admin/blocked-slots',{method:'POST',body:{bookingDate:date.value,bookingTime:time.value||null,reason:reason.value.trim()}});reason.value='';time.value='';await load()}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Не удалось заблокировать'}finally{loading.value=false}}
 async function remove(id:string){if(!confirm('Удалить блокировку?'))return;try{await $fetch(`/api/admin/blocked-slots/${id}`,{method:'DELETE'});await load()}catch(e:any){error.value=e?.data?.statusMessage||e?.message||'Ошибка'}}
