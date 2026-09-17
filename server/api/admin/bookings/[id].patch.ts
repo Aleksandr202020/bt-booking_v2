@@ -20,7 +20,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'INVALID_BOOKING_ID', data: { code: 'INVALID_BOOKING_ID' } })
   }
 
-  const body = schema.parse(await readBody(event))
+  const parsed = schema.safeParse(await readBody(event))
+  if (!parsed.success) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'INVALID_BOOKING_REQUEST',
+      data: { code: 'INVALID_BOOKING_REQUEST' },
+    })
+  }
+
+  const body = parsed.data
   const booking = await updateBooking({
     bookingId: id,
     userId: body.userId,
