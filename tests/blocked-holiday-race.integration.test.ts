@@ -69,7 +69,7 @@ describe('blocked slot and holiday concurrency', () => {
     const results = await Promise.all([createHoliday(), createBlock()])
     const outcome = new Set(results)
 
-    const valid = [
+    const valid: Outcome[][] = [
       ['holiday-created', 'block-rejected'],
       ['holiday-rejected', 'block-created'],
     ]
