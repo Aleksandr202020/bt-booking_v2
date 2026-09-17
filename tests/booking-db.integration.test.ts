@@ -1,5 +1,6 @@
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { createBooking } from '../server/domain/booking/create-booking'
 
 const databaseUrl = process.env.DATABASE_URL
 
@@ -135,6 +136,53 @@ describe('PostgreSQL booking integrity', () => {
     expect(second.id).toBeTruthy()
 
     await sql`DELETE FROM bookings WHERE id IN (${first.id}, ${second.id})`
+  })
+
+  it('enforces the customer booking limit across concurrent requests on different dates', async () => {
+    const now = new Date()
+    const isoDate = (daysAhead: number) => {
+      const date = new Date(now)
+      date.setUTCHours(12, 0, 0, 0)
+      date.setUTCDate(date.getUTCDate() + daysAhead)
+      return date.toISOString().slice(0, 10)
+    }
+
+    const existingDates = [isoDate(2), isoDate(3)]
+    const concurrentDates = [isoDate(4), isoDate(5)]
+
+    for (const [index, bookingDate] of existingDates.entries()) {
+      await createBooking({
+        userId,
+        carId,
+        bookingDate,
+        bookingTime: index === 0 ? '09:00' : '10:00',
+      })
+    }
+
+    const results = await Promise.allSettled(
+      concurrentDates.map((bookingDate, index) => createBooking({
+        userId,
+        carId,
+        bookingDate,
+        bookingTime: index === 0 ? '11:00' : '12:00',
+      })),
+    )
+
+    expect(results).toHaveLength(2)
+    expect(results.every((result) => result.status === 'rejected')).toBe(true)
+    expect(results.map((result) => result.status === 'rejected' ? result.reason?.data?.code : null)).toEqual([
+      'BOOKING_LIMIT_REACHED',
+      'BOOKING_LIMIT_REACHED',
+    ])
+
+    const rows = await sql`
+      SELECT booking_date, booking_time
+      FROM bookings
+      WHERE user_id = ${userId}
+        AND status IN ('pending', 'confirmed')
+      ORDER BY booking_date, booking_time
+    `
+    expect(rows).toHaveLength(2)
   })
 
   it('serializes a booking against a concurrent slot block', async () => {
