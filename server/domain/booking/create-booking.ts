@@ -1,5 +1,6 @@
 import { createError } from 'h3'
 import { getDb } from '../../utils/db'
+import { writeAuditLog } from '../../utils/audit'
 import { getPriceCents } from '../pricing/pricing'
 import { BOOKING_ERROR_CODES } from './booking-rules'
 import { addCalendarDays, daysBetween, getRigaNowParts, isPastSlot, isValidIsoDate, isWorkingSlot } from './dates'
@@ -33,6 +34,7 @@ export async function createBooking(input: {
   bookingTime: string
   notes?: string | null
   isAdmin?: boolean
+  auditActorId?: string | null
 }) {
   if (!isValidIsoDate(input.bookingDate)) fail(BOOKING_ERROR_CODES.INVALID_DATE, 400)
   if (!isWorkingSlot(input.bookingTime)) fail(BOOKING_ERROR_CODES.INVALID_SLOT, 400)
@@ -116,6 +118,14 @@ export async function createBooking(input: {
         VALUES (${input.userId}, ${input.carId}, ${input.bookingDate}, ${input.bookingTime}, ${priceCents}, 'confirmed', ${input.notes ?? null})
         RETURNING *
       `
+      if (input.isAdmin && input.auditActorId) {
+        await writeAuditLog({
+          actorId: input.auditActorId,
+          action: 'booking.created',
+          targetId: inserted[0].id,
+          metadata: { userId: input.userId, carId: input.carId, bookingDate: input.bookingDate, bookingTime: input.bookingTime },
+        }, tx)
+      }
       return inserted[0]
     } catch (error: any) {
       if (error?.code === '23505') fail(BOOKING_ERROR_CODES.SLOT_UNAVAILABLE)
