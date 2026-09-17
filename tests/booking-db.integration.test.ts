@@ -12,6 +12,7 @@ const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const email = `booking-test-${suffix}@example.test`
 let userId: string
 let carId: string
+let secondCarId: string
 
 type BookingBlockOutcome = 'booking-rejected' | 'booking-created' | 'block-rejected' | 'block-created'
 type BookingHolidayOutcome = 'booking-rejected' | 'booking-created' | 'holiday-rejected' | 'holiday-created'
@@ -30,6 +31,13 @@ beforeAll(async () => {
     RETURNING id
   `
   carId = car.id
+
+  const [secondCar] = await sql`
+    INSERT INTO cars (user_id, make, model, registration_number, category)
+    VALUES (${userId}, 'Test', 'Second Vehicle', ${`TEST-SECOND-${suffix}`}, 'passenger')
+    RETURNING id
+  `
+  secondCarId = secondCar.id
 })
 
 afterAll(async () => {
@@ -150,23 +158,33 @@ describe('PostgreSQL booking integrity', () => {
     const existingDates = [isoDate(2), isoDate(3)]
     const concurrentDates = [isoDate(4), isoDate(5)]
 
-    for (const [index, bookingDate] of existingDates.entries()) {
-      await createBooking({
-        userId,
-        carId,
-        bookingDate,
-        bookingTime: index === 0 ? '09:00' : '10:00',
-      })
-    }
+    await createBooking({
+      userId,
+      carId,
+      bookingDate: existingDates[0],
+      bookingTime: '09:00',
+    })
+    await createBooking({
+      userId,
+      carId: secondCarId,
+      bookingDate: existingDates[1],
+      bookingTime: '10:00',
+    })
 
-    const results = await Promise.allSettled(
-      concurrentDates.map((bookingDate, index) => createBooking({
+    const results = await Promise.allSettled([
+      createBooking({
         userId,
         carId,
-        bookingDate,
-        bookingTime: index === 0 ? '11:00' : '12:00',
-      })),
-    )
+        bookingDate: concurrentDates[0],
+        bookingTime: '11:00',
+      }),
+      createBooking({
+        userId,
+        carId: secondCarId,
+        bookingDate: concurrentDates[1],
+        bookingTime: '12:00',
+      }),
+    ])
 
     expect(results).toHaveLength(2)
     expect(results.every((result) => result.status === 'rejected')).toBe(true)
