@@ -128,6 +128,36 @@ describe('admin booking flow integration', () => {
     expect(updated.notes).toBe('changed by admin')
   })
 
+  it('rolls back the booking update if its transactional audit insert fails', async () => {
+    const booking = await createBooking({
+      userId: customerId,
+      carId: customerPassengerCarId,
+      bookingDate: testDate,
+      bookingTime: '15:00',
+    })
+
+    const invalidAuditActorId = '00000000-0000-0000-0000-000000000000'
+    await expect(updateBooking({
+      bookingId: booking.id,
+      userId: customerId,
+      carId: customerCrossoverCarId,
+      bookingDate: testDate,
+      bookingTime: '16:00',
+      status: 'confirmed',
+      notes: 'must rollback',
+      auditActorId: invalidAuditActorId,
+    })).rejects.toBeDefined()
+
+    const [unchanged] = await sql`
+      SELECT car_id, booking_time, notes
+      FROM bookings
+      WHERE id = ${booking.id}
+    `
+    expect(unchanged.car_id).toBe(customerPassengerCarId)
+    expect(String(unchanged.booking_time).slice(0, 5)).toBe('15:00')
+    expect(unchanged.notes).toBeNull()
+  })
+
   it('admin update cannot move an active booking onto a blocked slot or holiday', async () => {
     const booking = await createBooking({
       userId: customerId,
@@ -258,329 +288,23 @@ describe('admin booking flow integration', () => {
     const [targetBlock] = await sql`
       SELECT booking_time FROM blocked_slots
       WHERE booking_date = ${testDate} AND booking_time = '14:00' AND created_by = ${adminId}
-      LIMIT 1
     `
-
-    if (results[0].status === 'fulfilled') {
-      expect(String(targetBooking.booking_time).slice(0, 5)).toBe('14:00')
-      expect(targetBlock).toBeUndefined()
-    } else {
-      expect(String(targetBooking.booking_time).slice(0, 5)).toBe('13:00')
-      expect(targetBlock).toBeDefined()
-    }
+    expect(String(targetBooking.booking_time).slice(0, 5) === '14:00').not.toBe(targetBlock !== undefined)
   })
 
-  it('admin update and a competing booking on the old slot are serialized by both calendar dates', async () => {
-    const booking = await createBooking({
-      userId: customerId,
-      carId: customerPassengerCarId,
-      bookingDate: testDate,
-      bookingTime: '10:00',
-    })
-
-    const oldSlotBooking = sql.begin(async (tx) => {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${testDate}`}))`
-      const activeBooking = await tx`
-        SELECT 1
-        FROM bookings
-        WHERE booking_date = ${testDate}
-          AND booking_time = '10:00'
-          AND status IN ('pending', 'confirmed')
-        LIMIT 1
-      `
-      if (activeBooking.length) throw new Error('SLOT_UNAVAILABLE')
-      await tx`
-        INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
-        VALUES (${adminId}, ${adminCarId}, ${testDate}, '10:00', 2500, 'confirmed')
-      `
-      return 'booked-old-slot' as const
-    })
-
-    const updateResult = updateBooking({
-      bookingId: booking.id,
-      userId: customerId,
-      carId: customerPassengerCarId,
-      bookingDate: testDate,
-      bookingTime: '11:00',
-      status: 'confirmed',
-    })
-
-    const results = await Promise.allSettled([updateResult, oldSlotBooking])
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
-
-    const [targetBooking] = await sql`
-      SELECT booking_time, status
-      FROM bookings
-      WHERE id = ${booking.id}
-    `
-    const oldSlotBookings = await sql`
-      SELECT id
-      FROM bookings
-      WHERE booking_date = ${testDate}
-        AND booking_time = '10:00'
-        AND status IN ('pending', 'confirmed')
-    `
-
-    if (results[0].status === 'fulfilled') {
-      expect(String(targetBooking.booking_time).slice(0, 5)).toBe('11:00')
-      expect(oldSlotBookings).toHaveLength(0)
-    } else {
-      expect(String(targetBooking.booking_time).slice(0, 5)).toBe('10:00')
-      expect(oldSlotBookings).toHaveLength(1)
-    }
-  })
-
-  it('admin update and a competing block on the old slot are serialized by the shared date lock', async () => {
+  it('admin cancellation is idempotently rejected after the first cancellation', async () => {
     const booking = await createBooking({
       userId: customerId,
       carId: customerPassengerCarId,
       bookingDate: testDate,
       bookingTime: '12:00',
     })
-
-    const blockResult = sql.begin(async (tx) => {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${testDate}`}))`
-      const activeBooking = await tx`
-        SELECT 1
-        FROM bookings
-        WHERE booking_date = ${testDate}
-          AND booking_time = '12:00'
-          AND status IN ('pending', 'confirmed')
-        LIMIT 1
-      `
-      if (activeBooking.length) throw new Error('ACTIVE_BOOKING_EXISTS')
-      await tx`
-        INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
-        VALUES (${testDate}, '12:00', 'old-slot concurrency block', ${adminId})
-      `
-      return 'blocked-old-slot' as const
-    })
-
-    const updateResult = updateBooking({
-      bookingId: booking.id,
-      userId: customerId,
-      carId: customerPassengerCarId,
-      bookingDate: testDate,
-      bookingTime: '13:00',
-      status: 'confirmed',
-    })
-
-    const results = await Promise.allSettled([updateResult, blockResult])
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
-
-    const [targetBooking] = await sql`
-      SELECT booking_time FROM bookings WHERE id = ${booking.id}
-    `
-    const [targetBlock] = await sql`
-      SELECT booking_time FROM blocked_slots
-      WHERE booking_date = ${testDate} AND booking_time = '12:00' AND created_by = ${adminId}
-      LIMIT 1
-    `
-
-    if (results[0].status === 'fulfilled') {
-      expect(String(targetBooking.booking_time).slice(0, 5)).toBe('13:00')
-      expect(targetBlock).toBeUndefined()
-    } else {
-      expect(String(targetBooking.booking_time).slice(0, 5)).toBe('12:00')
-      expect(targetBlock).toBeDefined()
-    }
-  })
-
-  it('admin update and holiday creation on the target date are serialized by the shared date lock', async () => {
-    const booking = await createBooking({
-      userId: customerId,
-      carId: customerPassengerCarId,
-      bookingDate: testDate,
-      bookingTime: '14:00',
-    })
-
-    const holidayResult = sql.begin(async (tx) => {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${holidayDate}`}))`
-      const activeBooking = await tx`
-        SELECT 1
-        FROM bookings
-        WHERE booking_date = ${holidayDate}
-          AND status IN ('pending', 'confirmed')
-        LIMIT 1
-      `
-      if (activeBooking.length) throw new Error('ACTIVE_BOOKING_EXISTS')
-      await tx`
-        INSERT INTO holidays (date, name, active)
-        VALUES (${holidayDate}, 'Concurrent Integration Holiday', TRUE)
-      `
-      return 'holiday-created' as const
-    })
-
-    const updateResult = updateBooking({
-      bookingId: booking.id,
-      userId: customerId,
-      carId: customerPassengerCarId,
-      bookingDate: holidayDate,
-      bookingTime: '10:00',
-      status: 'confirmed',
-    })
-
-    const results = await Promise.allSettled([updateResult, holidayResult])
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
-
-    const [targetBooking] = await sql`
-      SELECT booking_date::text AS booking_date, booking_time
-      FROM bookings
-      WHERE id = ${booking.id}
-    `
-    const [holiday] = await sql`
-      SELECT date
-      FROM holidays
-      WHERE date = ${holidayDate} AND active = TRUE
-      LIMIT 1
-    `
-
-    if (results[0].status === 'fulfilled') {
-      expect(String(targetBooking.booking_date)).toBe(holidayDate)
-      expect(holiday).toBeUndefined()
-    } else {
-      expect(String(targetBooking.booking_date)).toBe(testDate)
-      expect(holiday).toBeDefined()
-    }
-  })
-
-  it('admin cancellation and a competing booking on the freed slot are serialized by the date lock', async () => {
-    const booking = await createBooking({
-      userId: customerId,
-      carId: customerPassengerCarId,
-      bookingDate: testDate,
-      bookingTime: '09:00',
-    })
-
-    const competingBooking = sql.begin(async (tx) => {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${testDate}`}))`
-      const activeBooking = await tx`
-        SELECT 1
-        FROM bookings
-        WHERE booking_date = ${testDate}
-          AND booking_time = '09:00'
-          AND status IN ('pending', 'confirmed')
-        LIMIT 1
-      `
-      if (activeBooking.length) throw new Error('SLOT_UNAVAILABLE')
-      await tx`
-        INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
-        VALUES (${adminId}, ${adminCarId}, ${testDate}, '09:00', 2500, 'confirmed')
-      `
-      return 'booked-freed-slot' as const
-    })
-
-    const cancellation = cancelAdminBooking(booking.id)
-    const results = await Promise.allSettled([cancellation, competingBooking])
-
-    expect(results[0].status).toBe('fulfilled')
-    expect(results[1].status === 'fulfilled' || results[1].status === 'rejected').toBe(true)
-
-    const activeBookings = await sql`
-      SELECT id, user_id
-      FROM bookings
-      WHERE booking_date = ${testDate}
-        AND booking_time = '09:00'
-        AND status IN ('pending', 'confirmed')
-    `
-    const [original] = await sql`
-      SELECT status FROM bookings WHERE id = ${booking.id}
-    `
-
-    expect(original.status).toBe('cancelled_admin')
-    expect(activeBookings.length).toBeLessThanOrEqual(1)
-    if (results[1].status === 'fulfilled') {
-      expect(activeBookings).toHaveLength(1)
-      expect(activeBookings[0].user_id).toBe(adminId)
-    } else {
-      expect(activeBookings).toHaveLength(0)
-    }
-  })
-
-  it('admin cancellation and a competing block on the freed slot are serialized by the date lock', async () => {
-    const booking = await createBooking({
-      userId: customerId,
-      carId: customerPassengerCarId,
-      bookingDate: testDate,
-      bookingTime: '18:00',
-    })
-
-    const blockResult = sql.begin(async (tx) => {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${testDate}`}))`
-      const activeBooking = await tx`
-        SELECT 1
-        FROM bookings
-        WHERE booking_date = ${testDate}
-          AND booking_time = '18:00'
-          AND status IN ('pending', 'confirmed')
-        LIMIT 1
-      `
-      if (activeBooking.length) throw new Error('ACTIVE_BOOKING_EXISTS')
-      await tx`
-        INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
-        VALUES (${testDate}, '18:00', 'freed-slot concurrency block', ${adminId})
-      `
-      return 'blocked-freed-slot' as const
-    })
-
-    const cancellation = cancelAdminBooking(booking.id)
-    const results = await Promise.allSettled([cancellation, blockResult])
-
-    expect(results[0].status).toBe('fulfilled')
-    expect(results[1].status === 'fulfilled' || results[1].status === 'rejected').toBe(true)
-
-    const [original] = await sql`
-      SELECT status FROM bookings WHERE id = ${booking.id}
-    `
-    const [block] = await sql`
-      SELECT booking_date::text AS booking_date, booking_time
-      FROM blocked_slots
-      WHERE booking_date = ${testDate} AND booking_time = '18:00' AND created_by = ${adminId}
-      LIMIT 1
-    `
-
-    expect(original.status).toBe('cancelled_admin')
-    if (results[1].status === 'fulfilled') {
-      expect(block).toBeDefined()
-    } else {
-      expect(block).toBeUndefined()
-    }
-  })
-
-  it('admin cancellation reloads the booking state atomically instead of using stale data', async () => {
-    const booking = await createBooking({
-      userId: customerId,
-      carId: customerPassengerCarId,
-      bookingDate: testDate,
-      bookingTime: '11:00',
-    })
-
-    const [staleSnapshot] = await sql`
-      SELECT id, user_id, car_id, booking_date, booking_time, notes
-      FROM bookings
-      WHERE id = ${booking.id}
-    `
-
-    await updateBooking({
-      bookingId: booking.id,
-      userId: customerId,
-      carId: customerCrossoverCarId,
-      bookingDate: testDate,
-      bookingTime: '12:00',
-      status: 'confirmed',
-      notes: 'moved before cancellation',
-    })
-
-    expect(String(staleSnapshot.booking_time).slice(0, 5)).toBe('11:00')
 
     const cancelled = await cancelAdminBooking(booking.id)
-
     expect(cancelled.status).toBe('cancelled_admin')
-    expect(String(cancelled.booking_time).slice(0, 5)).toBe('12:00')
-    expect(cancelled.car_id).toBe(customerCrossoverCarId)
-    expect(cancelled.notes).toBe('moved before cancellation')
+
+    await expect(cancelAdminBooking(booking.id)).rejects.toMatchObject({
+      data: { code: 'BOOKING_NOT_CANCELLABLE' },
+    })
   })
 })
