@@ -58,18 +58,22 @@ describe('booking ↔ ban concurrency', () => {
       return 'ban-created'
     })
 
-    const results = await Promise.allSettled([
-      createBooking({
-        userId,
-        carId,
-        bookingDate,
-        bookingTime,
-      }).then(() => 'booking-created' as const).catch((error) => {
-        if (error?.data?.code === 'CLIENT_BANNED') return 'booking-rejected' as const
+    const attemptBooking = async (): Promise<BookingBanOutcome> => {
+      try {
+        await createBooking({
+          userId,
+          carId,
+          bookingDate,
+          bookingTime,
+        })
+        return 'booking-created'
+      } catch (error: any) {
+        if (error?.data?.code === 'CLIENT_BANNED') return 'booking-rejected'
         throw error
-      }),
-      attemptBan(),
-    ])
+      }
+    }
+
+    const results = await Promise.allSettled([attemptBooking(), attemptBan()])
 
     const fulfilled = results
       .filter((result): result is PromiseFulfilledResult<BookingBanOutcome> => result.status === 'fulfilled')
