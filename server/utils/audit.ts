@@ -16,6 +16,7 @@ export async function writeAuditLog(input: AuditInput, client?: any) {
     INSERT INTO audit_logs (actor_id, action, target_id, metadata)
     VALUES (
       ${input.actorId},
+      ${input.action},
       ${input.targetId ?? null},
       ${JSON.stringify(input.metadata ?? {})}::jsonb
     )
