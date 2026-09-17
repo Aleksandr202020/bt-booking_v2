@@ -1,7 +1,5 @@
 import { getDb } from './db'
 
-type SqlClient = ReturnType<typeof getDb>
-
 type AuditInput = {
   actorId: string | null
   action: string
@@ -9,7 +7,10 @@ type AuditInput = {
   metadata?: Record<string, unknown>
 }
 
-export async function writeAuditLog(input: AuditInput, client?: SqlClient) {
+// Pass the transaction client for audit entries that must commit or roll back
+// together with the business mutation. Without it, an audit row could commit
+// even when the surrounding transaction is rolled back.
+export async function writeAuditLog(input: AuditInput, client?: any) {
   const db = client ?? getDb()
   await db`
     INSERT INTO audit_logs (actor_id, action, target_id, metadata)
