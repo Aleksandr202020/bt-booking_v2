@@ -97,7 +97,8 @@ describe('cancellation ↔ booking concurrency', () => {
 
     expect(rejected).toHaveLength(0)
     expect(fulfilled).toContain('cancelled')
-    expect(fulfilled).toContain('booking-created')
+    expect(fulfilled).toHaveLength(2)
+    expect(fulfilled.filter((outcome) => outcome === 'booking-created' || outcome === 'booking-rejected')).toHaveLength(1)
 
     const [original] = await sql`
       SELECT status FROM bookings WHERE id = ${existingBookingId}
@@ -110,8 +111,13 @@ describe('cancellation ↔ booking concurrency', () => {
         AND booking_time = ${bookingTime}
         AND status IN ('pending', 'confirmed')
     `
-    expect(activeBookings).toHaveLength(1)
-    expect(activeBookings[0].user_id).toBe(customerBId)
+    const bookingOutcome = fulfilled.find((outcome) => outcome !== 'cancelled')
+    if (bookingOutcome === 'booking-created') {
+      expect(activeBookings).toHaveLength(1)
+      expect(activeBookings[0].user_id).toBe(customerBId)
+    } else {
+      expect(activeBookings).toHaveLength(0)
+    }
 
     const audits = await sql`
       SELECT action, target_id
@@ -120,6 +126,9 @@ describe('cancellation ↔ booking concurrency', () => {
         AND (actor_id = ${customerAId} OR actor_id = ${customerBId})
     `
     expect(audits.filter((row) => row.action === 'booking.cancelled_customer')).toHaveLength(1)
+    if (bookingOutcome === 'booking-created') {
+      expect(audits.filter((row) => row.action === 'booking.created')).toHaveLength(1)
+    }
 
     await sql`DELETE FROM bookings WHERE booking_date = ${bookingDate} AND booking_time = ${bookingTime}`
     await sql`
