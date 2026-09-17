@@ -51,16 +51,20 @@ export async function updateBooking(input: {
   const active = isActiveStatus(input.status)
 
   return db.begin(async (tx) => {
-    // Lock the booking row first so the current source date is known and cannot become stale.
-    // Then serialize every affected calendar date in a deterministic order. This applies even
-    // when an active booking is changed to an inactive status because that operation frees the
-    // source slot and must be ordered with other calendar mutations on that date.
+    // Lock the booking row first so the current source date/user cannot become stale.
+    // User locks use deterministic ordering to prevent update↔update deadlocks when two
+    // bookings are reassigned between the same pair of customers.
     const existingRows = await tx`
-      SELECT id, booking_date, booking_time, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
+      SELECT id, user_id, booking_date, booking_time, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
     `
     const existing = existingRows[0]
     if (!existing) {
       throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
+    }
+
+    const userIds = [String(existing.user_id), input.userId].sort()
+    for (const userId of [...new Set(userIds)]) {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
     }
 
     const dates = [String(existing.booking_date).slice(0, 10), input.bookingDate].sort()
