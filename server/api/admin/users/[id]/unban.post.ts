@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { requireAdmin } from '../../../../utils/authorization'
 import { writeAuditLog } from '../../../../utils/audit'
 import { getDb } from '../../../../utils/db'
