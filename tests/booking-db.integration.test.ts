@@ -184,7 +184,7 @@ describe('PostgreSQL booking integrity', () => {
         }),
         createBooking({
           userId,
-          secondCarId,
+          carId: secondCarId,
           bookingDate: concurrentDates[1],
           bookingTime: '12:00',
         }),
