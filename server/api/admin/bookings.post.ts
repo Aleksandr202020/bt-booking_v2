@@ -12,7 +12,7 @@ const schema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  await requireAdmin(event)
+  const admin = await requireAdmin(event)
   const parsed = schema.safeParse(await readBody(event))
   if (!parsed.success) {
     throw createError({
@@ -29,6 +29,7 @@ export default defineEventHandler(async (event) => {
     bookingTime: parsed.data.bookingTime,
     notes: parsed.data.notes,
     isAdmin: true,
+    auditActorId: admin.id,
   })
   return { booking }
 })
