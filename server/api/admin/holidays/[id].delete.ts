@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
     `
     if (!deleted.length) throw createError({ statusCode: 404, statusMessage: 'HOLIDAY_NOT_FOUND', data: { code: 'HOLIDAY_NOT_FOUND' } })
 
-    await writeAuditLog({ actorId: admin.id, action: 'holiday.deleted', targetId: id, metadata: deleted[0] })
+    await writeAuditLog({ actorId: admin.id, action: 'holiday.deleted', targetId: id, metadata: deleted[0] }, tx)
     return { deleted: true, id }
   })
 })
