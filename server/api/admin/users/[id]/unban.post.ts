@@ -1,4 +1,5 @@
 import { requireAdmin } from '../../../../utils/authorization'
+import { writeAuditLog } from '../../../../utils/audit'
 import { getDb } from '../../../../utils/db'
 
 export default defineEventHandler(async (event) => {
@@ -19,10 +20,12 @@ export default defineEventHandler(async (event) => {
     `
     if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CUSTOMER_NOT_FOUND', data: { code: 'CUSTOMER_NOT_FOUND' } })
 
-    await tx`
-      INSERT INTO audit_logs (actor_id, action, target_id)
-      VALUES (${admin.id}, 'UNBAN_USER', ${userId}::uuid)
-    `
+    await writeAuditLog({
+      actorId: admin.id,
+      action: 'UNBAN_USER',
+      targetId: userId,
+    }, tx)
+
     return { user: rows[0] }
   })
 })
