@@ -24,19 +24,23 @@ export default defineEventHandler(async (event) => {
   const body = parsed.data
   const db = getDb()
 
-  const models = await db`
-    SELECT v.name, v.category
-    FROM vehicle_models v
-    JOIN vehicle_makes m ON m.id = v.make_id
-    WHERE m.name = ${body.make} AND v.name = ${body.model} AND m.active = TRUE AND v.active = TRUE
-    LIMIT 1
-  `
-
-  if (!models.length) {
-    throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL', data: { code: 'INVALID_VEHICLE_MODEL' } })
-  }
-
   return db.begin(async (tx) => {
+    // Serialize against the SS.COM catalog snapshot writer so model/category
+    // validation cannot observe a partially applied catalog snapshot.
+    await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:ss-catalog-sync'))`
+
+    const models = await tx`
+      SELECT v.name, v.category
+      FROM vehicle_models v
+      JOIN vehicle_makes m ON m.id = v.make_id
+      WHERE m.name = ${body.make} AND v.name = ${body.model} AND m.active = TRUE AND v.active = TRUE
+      LIMIT 1
+    `
+
+    if (!models.length) {
+      throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL', data: { code: 'INVALID_VEHICLE_MODEL' } })
+    }
+
     // Keep car creation on the same user lock as booking and ban/unban mutations.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
 
