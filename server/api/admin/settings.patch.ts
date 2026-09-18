@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
   return db.begin(async (tx) => {
     const rows = await tx`UPDATE app_settings SET value = ${JSON.stringify(body.value)}::jsonb, updated_at = now() WHERE key = ${body.key} RETURNING key, value`
-    if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'SETTING_NOT_FOUND' })
+    if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'SETTING_NOT_FOUND', data: { code: 'SETTING_NOT_FOUND' } })
     await writeAuditLog({ actorId: admin.id, action: 'setting.updated', metadata: { key: body.key, value: body.value } }, tx)
     return { setting: rows[0] }
   })
