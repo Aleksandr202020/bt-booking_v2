@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
       WHERE id = ${id}
       LIMIT 1
     `
-    if (!owners.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+    if (!owners.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
 
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${owners[0].user_id}`}))`
 
@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
         AND v.active = true
       LIMIT 1
     `
-    if (!model.length) throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL' })
+    if (!model.length) throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL', data: { code: 'INVALID_VEHICLE_MODEL' } })
 
     const vehicleChanged = cars[0].make !== body.make || cars[0].model !== body.model
     if (vehicleChanged) {
@@ -89,9 +89,9 @@ export default defineEventHandler(async (event) => {
         action: 'car.updated',
         targetId: id,
         metadata: {
-          make: body.make,
-          model: body.model,
-          registrationNumber: body.registrationNumber,
+          userId: rows[0].user_id,
+          previous: { make: cars[0].make, model: cars[0].model, registrationNumber: cars[0].registration_number, category: cars[0].category },
+          current: { make: rows[0].make, model: rows[0].model, registrationNumber: rows[0].registration_number, category: rows[0].category },
         },
       }, tx)
       return { car: rows[0] }
