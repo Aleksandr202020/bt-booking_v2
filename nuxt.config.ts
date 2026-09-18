@@ -21,6 +21,11 @@ export default defineNuxtConfig({
           'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
         },
       },
+      '/api/**': {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      },
     },
   },
 });
