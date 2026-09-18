@@ -32,6 +32,9 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
 
   return db.begin(async (tx: any) => {
+    // Serialize model/category validation against the atomic SS.COM catalog snapshot.
+    await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:ss-catalog-sync'))`
+
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
 
     const [currentUser] = await tx`SELECT banned FROM users WHERE id = ${user.id} FOR SHARE`
