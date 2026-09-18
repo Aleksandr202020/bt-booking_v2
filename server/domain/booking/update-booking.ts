@@ -164,12 +164,22 @@ export async function updateBooking(input: {
               action: 'booking.updated',
               targetId: updated.id,
               metadata: {
-                status: updated.status,
-                bookingDate: updated.booking_date,
-                bookingTime: updated.booking_time,
-                previousStatus: existing.status,
-                previousBookingDate: existing.booking_date,
-                previousBookingTime: existing.booking_time,
+                previous: {
+                  userId: existing.user_id,
+                  carId: existing.car_id,
+                  bookingDate: existing.booking_date,
+                  bookingTime: existing.booking_time,
+                  status: existing.status,
+                  priceCents: existing.price_cents,
+                },
+                current: {
+                  userId: updated.user_id,
+                  carId: updated.car_id,
+                  bookingDate: updated.booking_date,
+                  bookingTime: updated.booking_time,
+                  status: updated.status,
+                  priceCents: updated.price_cents,
+                },
               },
             })
           }
