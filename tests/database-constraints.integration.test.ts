@@ -45,17 +45,16 @@ afterAll(async () => {
 })
 
 async function expectConstraintViolation(query: Promise<unknown>, constraint: string) {
-  await expect(query).rejects.toMatchObject({ code: '23505', constraint })
+  await expect(query).rejects.toMatchObject({ code: '23505', constraint_name })
 }
 
 async function expectCheckViolation(query: Promise<unknown>, constraint: string) {
-  await expect(query).rejects.toMatchObject({ code: '23514', constraint })
+  await expect(query).rejects.toMatchObject({ code: '23514', constraint_name })
 }
 
 describe('database booking constraints', () => {
   it('enforces valid one-hour booking and blocked-slot times at the database boundary', async () => {
-    const { date: today } = getRigaNowParts()
-    const bookingDate = addCalendarDays(today, 9)
+    const bookingDate = '2099-12-10'
 
     await expectCheckViolation(sql`
       INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
@@ -74,8 +73,7 @@ describe('database booking constraints', () => {
   })
 
   it('enforces one active booking per date and time while allowing history rows', async () => {
-    const { date: today } = getRigaNowParts()
-    const bookingDate = addCalendarDays(today, 5)
+    const bookingDate = '2099-12-11'
     const bookingTime = '13:00'
 
     await sql`
@@ -102,9 +100,8 @@ describe('database booking constraints', () => {
   })
 
   it('enforces unique whole-day and slot blocked entries', async () => {
-    const { date: today } = getRigaNowParts()
-    const wholeDay = addCalendarDays(today, 6)
-    const slotDate = addCalendarDays(today, 7)
+    const wholeDay = '2099-12-12'
+    const slotDate = '2099-12-13'
 
     await sql`
       INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
@@ -126,8 +123,7 @@ describe('database booking constraints', () => {
   })
 
   it('enforces one holiday row per date', async () => {
-    const { date: today } = getRigaNowParts()
-    const holidayDate = addCalendarDays(today, 8)
+    const holidayDate = '2099-12-14'
 
     await sql`
       INSERT INTO holidays (date, name, active)
