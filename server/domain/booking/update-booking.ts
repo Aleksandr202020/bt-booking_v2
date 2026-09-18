@@ -34,6 +34,8 @@ async function writeAuditInTransaction(tx: any, input: AuditInput) {
   `
 }
 
+class RetryBookingLockError extends Error {}
+
 export async function updateBooking(input: {
   bookingId: string
   userId: string
@@ -50,151 +52,207 @@ export async function updateBooking(input: {
   const db = getDb()
   const active = isActiveStatus(input.status)
 
-  return db.begin(async (tx) => {
-    // Lock the booking row first so the current source date/user cannot become stale.
-    // User locks use deterministic ordering to prevent update↔update deadlocks when two
-    // bookings are reassigned between the same pair of customers.
-    const existingRows = await tx`
-      SELECT id, user_id, booking_date, booking_time, status FROM bookings WHERE id = ${input.bookingId} FOR UPDATE
-    `
-    const existing = existingRows[0]
-    if (!existing) {
-      throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
-    }
-
-    const userIds = [String(existing.user_id), input.userId].sort()
-    for (const userId of [...new Set(userIds)]) {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
-    }
-
-    const dates = [String(existing.booking_date).slice(0, 10), input.bookingDate].sort()
-    for (const date of [...new Set(dates)]) {
-      await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${date}`}))`
-    }
-
-    const targetUserRows = await tx`
-      SELECT id, banned FROM users WHERE id = ${input.userId} LIMIT 1
-    `
-    const targetUser = targetUserRows[0]
-    if (!targetUser) throw createError({ statusCode: 404, statusMessage: 'USER_NOT_FOUND', data: { code: 'USER_NOT_FOUND' } })
-    if (targetUser.banned && active) {
-      fail(BOOKING_ERROR_CODES.CLIENT_BANNED, 403)
-    }
-
-    const cars = await tx`
-      SELECT id, user_id, category FROM cars WHERE id = ${input.carId} LIMIT 1
-    `
-    const car = cars[0]
-    if (!car) fail(BOOKING_ERROR_CODES.CAR_NOT_FOUND, 404)
-    if (car.user_id !== input.userId) fail(BOOKING_ERROR_CODES.CAR_NOT_OWNED, 403)
-
-    if (active) {
-      if (isPastSlot(input.bookingDate, input.bookingTime)) fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
-
-      const holiday = await tx`
-        SELECT 1 FROM holidays WHERE date = ${input.bookingDate} AND active = TRUE LIMIT 1
-      `
-      if (holiday.length) fail(BOOKING_ERROR_CODES.HOLIDAY)
-
-      const blocked = await tx`
-        SELECT 1 FROM blocked_slots
-        WHERE booking_date = ${input.bookingDate}
-          AND (booking_time = ${input.bookingTime} OR booking_time IS NULL)
-        LIMIT 1
-      `
-      if (blocked.length) fail(BOOKING_ERROR_CODES.SLOT_BLOCKED)
-    }
-
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      const rows = await tx`
-        UPDATE bookings
-        SET user_id = ${input.userId},
-            car_id = ${input.carId},
-            booking_date = ${input.bookingDate},
-            booking_time = ${input.bookingTime},
-            price_cents = ${getPriceCents(car.category)},
-            status = ${input.status},
-            notes = ${input.notes ?? null},
-            updated_at = now()
-        WHERE id = ${input.bookingId}
-        RETURNING *
-      `
-      const updated = rows[0]
+      return await db.begin(async (tx) => {
+        // Read the source row without locking so we can discover every advisory lock
+        // required before taking any row lock. All booking writers use advisory locks
+        // before row locks; this prevents booking↔create/update deadlocks.
+        const snapshotRows = await tx`
+          SELECT id, user_id, booking_date, booking_time, status
+          FROM bookings
+          WHERE id = ${input.bookingId}
+        `
+        const snapshot = snapshotRows[0]
+        if (!snapshot) {
+          throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
+        }
 
-      if (input.auditActorId) {
-        await writeAuditInTransaction(tx, {
-          actorId: input.auditActorId,
-          action: 'booking.updated',
-          targetId: updated.id,
-          metadata: {
-            status: updated.status,
-            bookingDate: updated.booking_date,
-            bookingTime: updated.booking_time,
-            previousStatus: existing.status,
-            previousBookingDate: existing.booking_date,
-            previousBookingTime: existing.booking_time,
-          },
-        })
-      }
+        const userIds = [String(snapshot.user_id), input.userId].sort()
+        for (const userId of [...new Set(userIds)]) {
+          await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
+        }
 
-      return updated
-    } catch (error: any) {
-      if (error?.code === '23505') fail(BOOKING_ERROR_CODES.SLOT_UNAVAILABLE)
+        const dates = [String(snapshot.booking_date).slice(0, 10), input.bookingDate].sort()
+        for (const date of [...new Set(dates)]) {
+          await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${date}`}))`
+        }
+
+        const lockedRows = await tx`
+          SELECT id, user_id, booking_date, booking_time, status
+          FROM bookings
+          WHERE id = ${input.bookingId}
+          FOR UPDATE
+        `
+        const existing = lockedRows[0]
+        if (!existing) {
+          throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
+        }
+
+        // Another writer may have moved the booking after our unlocked snapshot.
+        // Roll back and retry so the next attempt acquires the current source locks
+        // before taking the booking row lock. This preserves one global lock order.
+        const currentUserId = String(existing.user_id)
+        const currentDate = String(existing.booking_date).slice(0, 10)
+        const snapshotUserId = String(snapshot.user_id)
+        const snapshotDate = String(snapshot.booking_date).slice(0, 10)
+        if (currentUserId !== snapshotUserId || currentDate !== snapshotDate) {
+          throw new RetryBookingLockError()
+        }
+
+        const targetUserRows = await tx`
+          SELECT id, banned FROM users WHERE id = ${input.userId} LIMIT 1
+        `
+        const targetUser = targetUserRows[0]
+        if (!targetUser) throw createError({ statusCode: 404, statusMessage: 'USER_NOT_FOUND', data: { code: 'USER_NOT_FOUND' } })
+        if (targetUser.banned && active) {
+          fail(BOOKING_ERROR_CODES.CLIENT_BANNED, 403)
+        }
+
+        const cars = await tx`
+          SELECT id, user_id, category FROM cars WHERE id = ${input.carId} LIMIT 1
+        `
+        const car = cars[0]
+        if (!car) fail(BOOKING_ERROR_CODES.CAR_NOT_FOUND, 404)
+        if (car.user_id !== input.userId) fail(BOOKING_ERROR_CODES.CAR_NOT_OWNED, 403)
+
+        if (active) {
+          if (isPastSlot(input.bookingDate, input.bookingTime)) fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
+
+          const holiday = await tx`
+            SELECT 1 FROM holidays WHERE date = ${input.bookingDate} AND active = TRUE LIMIT 1
+          `
+          if (holiday.length) fail(BOOKING_ERROR_CODES.HOLIDAY)
+
+          const blocked = await tx`
+            SELECT 1 FROM blocked_slots
+            WHERE booking_date = ${input.bookingDate}
+              AND (booking_time = ${input.bookingTime} OR booking_time IS NULL)
+            LIMIT 1
+          `
+          if (blocked.length) fail(BOOKING_ERROR_CODES.SLOT_BLOCKED)
+        }
+
+        try {
+          const rows = await tx`
+            UPDATE bookings
+            SET user_id = ${input.userId},
+                car_id = ${input.carId},
+                booking_date = ${input.bookingDate},
+                booking_time = ${input.bookingTime},
+                price_cents = ${getPriceCents(car.category)},
+                status = ${input.status},
+                notes = ${input.notes ?? null},
+                updated_at = now()
+            WHERE id = ${input.bookingId}
+            RETURNING *
+          `
+          const updated = rows[0]
+
+          if (input.auditActorId) {
+            await writeAuditInTransaction(tx, {
+              actorId: input.auditActorId,
+              action: 'booking.updated',
+              targetId: updated.id,
+              metadata: {
+                status: updated.status,
+                bookingDate: updated.booking_date,
+                bookingTime: updated.booking_time,
+                previousStatus: existing.status,
+                previousBookingDate: existing.booking_date,
+                previousBookingTime: existing.booking_time,
+              },
+            })
+          }
+
+          return updated
+        } catch (error: any) {
+          if (error?.code === '23505') fail(BOOKING_ERROR_CODES.SLOT_UNAVAILABLE)
+          throw error
+        }
+      })
+    } catch (error) {
+      if (error instanceof RetryBookingLockError && attempt < 4) continue
       throw error
     }
-  })
+  }
+
+  throw createError({ statusCode: 409, statusMessage: 'BOOKING_CONCURRENTLY_MODIFIED', data: { code: 'BOOKING_CONCURRENTLY_MODIFIED' } })
 }
 
 export async function cancelAdminBooking(bookingId: string, auditActorId?: string) {
   const db = getDb()
 
-  return db.begin(async (tx) => {
-    const existingRows = await tx`
-      SELECT id, user_id, car_id, booking_date, booking_time, status, notes
-      FROM bookings
-      WHERE id = ${bookingId}
-      FOR UPDATE
-    `
-    const booking = existingRows[0]
-    if (!booking) {
-      throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
-    }
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await db.begin(async (tx) => {
+        // Read the source date first, acquire the date advisory lock, then lock
+        // the row. This matches create/update/block/holiday calendar mutations.
+        const snapshotRows = await tx`
+          SELECT id, booking_date FROM bookings WHERE id = ${bookingId}
+        `
+        const snapshot = snapshotRows[0]
+        if (!snapshot) {
+          throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
+        }
 
-    if (!isActiveStatus(booking.status as BookingStatus)) {
-      throw createError({ statusCode: 409, statusMessage: 'BOOKING_NOT_CANCELLABLE', data: { code: 'BOOKING_NOT_CANCELLABLE' } })
-    }
+        const snapshotDate = String(snapshot.booking_date).slice(0, 10)
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${snapshotDate}`}))`
 
-    const bookingDate = String(booking.booking_date).slice(0, 10)
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
+        const existingRows = await tx`
+          SELECT id, user_id, car_id, booking_date, booking_time, status, notes
+          FROM bookings
+          WHERE id = ${bookingId}
+          FOR UPDATE
+        `
+        const booking = existingRows[0]
+        if (!booking) {
+          throw createError({ statusCode: 404, statusMessage: 'BOOKING_NOT_FOUND', data: { code: 'BOOKING_NOT_FOUND' } })
+        }
 
-    const rows = await tx`
-      UPDATE bookings
-      SET status = 'cancelled_admin', updated_at = now()
-      WHERE id = ${booking.id} AND status IN ('pending', 'confirmed')
-      RETURNING *
-    `
-    if (!rows.length) {
-      throw createError({ statusCode: 409, statusMessage: 'BOOKING_NOT_CANCELLABLE', data: { code: 'BOOKING_NOT_CANCELLABLE' } })
-    }
+        const currentDate = String(booking.booking_date).slice(0, 10)
+        if (currentDate !== snapshotDate) {
+          throw new RetryBookingLockError()
+        }
 
-    const cancelled = rows[0]
-    if (auditActorId) {
-      await writeAuditInTransaction(tx, {
-        actorId: auditActorId,
-        action: 'booking.cancelled_admin',
-        targetId: cancelled.id,
-        metadata: {
-          bookingDate: cancelled.booking_date,
-          bookingTime: cancelled.booking_time,
-          previousStatus: booking.status,
-        },
+        if (!isActiveStatus(booking.status as BookingStatus)) {
+          throw createError({ statusCode: 409, statusMessage: 'BOOKING_NOT_CANCELLABLE', data: { code: 'BOOKING_NOT_CANCELLABLE' } })
+        }
+
+        const rows = await tx`
+          UPDATE bookings
+          SET status = 'cancelled_admin', updated_at = now()
+          WHERE id = ${booking.id} AND status IN ('pending', 'confirmed')
+          RETURNING *
+        `
+        if (!rows.length) {
+          throw createError({ statusCode: 409, statusMessage: 'BOOKING_NOT_CANCELLABLE', data: { code: 'BOOKING_NOT_CANCELLABLE' } })
+        }
+
+        const cancelled = rows[0]
+        if (auditActorId) {
+          await writeAuditInTransaction(tx, {
+            actorId: auditActorId,
+            action: 'booking.cancelled_admin',
+            targetId: cancelled.id,
+            metadata: {
+              bookingDate: cancelled.booking_date,
+              bookingTime: cancelled.booking_time,
+              previousStatus: booking.status,
+            },
+          })
+        }
+
+        return cancelled
       })
+    } catch (error) {
+      if (error instanceof RetryBookingLockError && attempt < 4) continue
+      throw error
     }
+  }
 
-    return cancelled
-  })
+  throw createError({ statusCode: 409, statusMessage: 'BOOKING_CONCURRENTLY_MODIFIED', data: { code: 'BOOKING_CONCURRENTLY_MODIFIED' } })
 }
-
 export function isValidBookingStatus(value: string): value is BookingStatus {
   return (STATUS_VALUES as readonly string[]).includes(value)
 }
