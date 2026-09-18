@@ -29,9 +29,9 @@ The browser receives an opaque session token in a secure `httpOnly` cookie. Only
 
 ## Vehicle catalog
 
-Vehicle makes/models are versioned application seed data. The source snapshot is SS.COM Latvia's passenger-car catalog. SS.COM is not a runtime dependency.
+Vehicle makes/models are application-owned data stored in PostgreSQL. The booking application never calls SS.COM or another external catalog service at runtime.
 
-The catalog phase will keep the make/model names as source data while separately storing the wash category used for pricing.
+The catalog is treated as business data, while the wash pricing category is stored on each model. This keeps booking behaviour deterministic even if an external website changes, is unavailable, or changes its markup.
 
 ## Deployment
 
