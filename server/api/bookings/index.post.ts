@@ -31,6 +31,7 @@ export default defineEventHandler(async (event) => {
     bookingTime: body.bookingTime,
     notes: body.notes,
     isAdmin: user.role === 'admin',
+    auditActorId: user.role === 'admin' ? user.id : undefined,
   })
   return { booking }
 })
