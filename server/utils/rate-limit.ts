@@ -43,5 +43,7 @@ export async function resetLoginRateLimit(keys: string[]) {
   const db = getDb()
   const uniqueKeys = [...new Set(keys.filter(Boolean))]
   if (!uniqueKeys.length) return
-  await db`DELETE FROM login_rate_limits WHERE key IN ${db(uniqueKeys)}`
+  await db.begin(async (tx) => {
+    await tx`\n      UPDATE login_rate_limits\n      SET attempts = GREATEST(attempts - 1, 0)\n      WHERE key IN ${tx(uniqueKeys)}\n    `
+  })
 }
