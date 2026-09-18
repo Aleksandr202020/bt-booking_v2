@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
       const tokenHash = hashSessionToken(token)
       await tx`
         INSERT INTO sessions (user_id, token_hash, expires_at)
-        VALUES (${user.id}, ${tokenHash}, now() + (2592000 * interval '1 second'))
+        VALUES (${user.id}, ${tokenHash}, now() + (${SESSION_TTL_SECONDS} * interval '1 second'))
       `
       return { user, token }
     })
