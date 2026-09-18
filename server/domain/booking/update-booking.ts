@@ -59,7 +59,7 @@ export async function updateBooking(input: {
         // required before taking any row lock. All booking writers use advisory locks
         // before row locks; this prevents booking↔create/update deadlocks.
         const snapshotRows = await tx`
-          SELECT id, user_id, booking_date, booking_time, status
+          SELECT id, user_id, car_id, booking_date, booking_time, price_cents, status
           FROM bookings
           WHERE id = ${input.bookingId}
         `
@@ -79,7 +79,7 @@ export async function updateBooking(input: {
         }
 
         const lockedRows = await tx`
-          SELECT id, user_id, booking_date, booking_time, status
+          SELECT id, user_id, car_id, booking_date, booking_time, price_cents, status
           FROM bookings
           WHERE id = ${input.bookingId}
           FOR UPDATE
@@ -114,6 +114,15 @@ export async function updateBooking(input: {
         `
         const car = cars[0]
         if (!car) fail(BOOKING_ERROR_CODES.CAR_NOT_FOUND, 404)
+
+        // A booking's price is the price agreed when that booking was made.
+        // Editing an unrelated field (date/time/status/notes) must not silently
+        // reprice an existing booking because the car's category may have changed.
+        // A deliberate car change is the only case where the target car's current
+        // category determines the new booking price.
+        const priceCents = String(existing.car_id) === String(car.id)
+          ? Number(existing.price_cents)
+          : getPriceCents(car.category)
         if (car.user_id !== input.userId) fail(BOOKING_ERROR_CODES.CAR_NOT_OWNED, 403)
 
         if (active) {
@@ -140,7 +149,7 @@ export async function updateBooking(input: {
                 car_id = ${input.carId},
                 booking_date = ${input.bookingDate},
                 booking_time = ${input.bookingTime},
-                price_cents = ${getPriceCents(car.category)},
+                price_cents = ${priceCents},
                 status = ${input.status},
                 notes = ${input.notes ?? null},
                 updated_at = now()
