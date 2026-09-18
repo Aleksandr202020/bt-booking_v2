@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { getDb } from '../../utils/db'
 import { WORKING_SLOTS } from '../booking/booking-rules'
 import { isPastSlot, isValidIsoDate, isWithinCustomerBookingWindow } from './date-availability'
