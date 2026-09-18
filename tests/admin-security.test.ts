@@ -100,3 +100,36 @@ describe('admin API authorization contracts', () => {
     expect(dbMock).not.toHaveBeenCalled()
   })
 })
+
+
+describe('admin route coverage guard', () => {
+  it('keeps requireAdmin on every admin API endpoint', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const adminRoutes = [
+      'server/api/admin/audit.get.ts',
+      'server/api/admin/blocked-slots.post.ts',
+      'server/api/admin/blocked-slots/[id].delete.ts',
+      'server/api/admin/blocked-slots/index.get.ts',
+      'server/api/admin/bookings.get.ts',
+      'server/api/admin/bookings.post.ts',
+      'server/api/admin/bookings/[id].delete.ts',
+      'server/api/admin/bookings/[id].patch.ts',
+      'server/api/admin/cars.get.ts',
+      'server/api/admin/cars/[id].delete.ts',
+      'server/api/admin/cars/[id].patch.ts',
+      'server/api/admin/holidays.get.ts',
+      'server/api/admin/holidays.post.ts',
+      'server/api/admin/holidays/[id].delete.ts',
+      'server/api/admin/settings.get.ts',
+      'server/api/admin/settings.patch.ts',
+      'server/api/admin/users/index.get.ts',
+      'server/api/admin/users/[id]/ban.post.ts',
+      'server/api/admin/users/[id]/unban.post.ts',
+    ]
+
+    for (const route of adminRoutes) {
+      const source = await readFile(route, 'utf8')
+      expect(source, route).toContain('requireAdmin')
+    }
+  })
+})
