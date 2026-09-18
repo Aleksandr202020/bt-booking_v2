@@ -35,21 +35,33 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL', data: { code: 'INVALID_VEHICLE_MODEL' } })
   }
 
-  try {
-    const car = await db`
-      INSERT INTO cars (user_id, make, model, registration_number, category)
-      VALUES (${user.id}, ${body.make}, ${body.model}, ${body.registrationNumber}, ${models[0].category})
-      RETURNING id, make, model, registration_number, category, created_at, updated_at
+  return db.begin(async (tx) => {
+    // Keep car creation on the same user lock as booking and ban/unban mutations.
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
+
+    const [currentUser] = await tx`
+      SELECT banned FROM users WHERE id = ${user.id} FOR SHARE
     `
-    return { car: car[0] }
-  } catch (error: any) {
-    if (error?.code === '23505') {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'REGISTRATION_ALREADY_EXISTS',
-        data: { code: 'REGISTRATION_ALREADY_EXISTS' },
-      })
+    if (!currentUser || currentUser.banned) {
+      throw createError({ statusCode: 403, statusMessage: 'CLIENT_BANNED', data: { code: 'CLIENT_BANNED' } })
     }
-    throw error
-  }
+
+    try {
+      const car = await tx`
+        INSERT INTO cars (user_id, make, model, registration_number, category)
+        VALUES (${user.id}, ${body.make}, ${body.model}, ${models[0].category})
+        RETURNING id, make, model, registration_number, category, created_at, updated_at
+      `
+      return { car: car[0] }
+    } catch (error: any) {
+      if (error?.code === '23505') {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'REGISTRATION_ALREADY_EXISTS',
+          data: { code: 'REGISTRATION_ALREADY_EXISTS' },
+        })
+      }
+      throw error
+    }
+  })
 })
