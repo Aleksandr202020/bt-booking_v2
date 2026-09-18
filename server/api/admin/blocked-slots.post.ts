@@ -27,6 +27,17 @@ export default defineEventHandler(async (event) => {
       ? await tx`SELECT id FROM bookings WHERE booking_date = ${body.bookingDate} AND booking_time = ${body.bookingTime} AND status IN ('pending', 'confirmed') LIMIT 1`
       : await tx`SELECT id FROM bookings WHERE booking_date = ${body.bookingDate} AND status IN ('pending', 'confirmed') LIMIT 1`
     if (activeBookings.length) throw createError({ statusCode: 409, statusMessage: 'ACTIVE_BOOKING_EXISTS', data: { code: 'ACTIVE_BOOKING_EXISTS' } })
+
+    // A whole-day block and a slot block are mutually exclusive for the same date.
+    // Enforce this under the date advisory lock so concurrent admin mutations cannot
+    // create a logically contradictory calendar state.
+    const conflictingBlock = body.bookingTime
+      ? await tx`SELECT id FROM blocked_slots WHERE booking_date = ${body.bookingDate} AND booking_time IS NULL LIMIT 1`
+      : await tx`SELECT id FROM blocked_slots WHERE booking_date = ${body.bookingDate} LIMIT 1`
+    if (conflictingBlock.length) {
+      throw createError({ statusCode: 409, statusMessage: 'SLOT_ALREADY_BLOCKED', data: { code: 'SLOT_ALREADY_BLOCKED' } })
+    }
+
     try {
       const rows = await tx`INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by) VALUES (${body.bookingDate}, ${body.bookingTime ?? null}, ${body.reason}, ${admin.id}) RETURNING *`
       await writeAuditLog({ actorId: admin.id, action: 'blocked_slot.created', targetId: rows[0].id, metadata: rows[0] }, tx)
