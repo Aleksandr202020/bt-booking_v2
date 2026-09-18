@@ -32,8 +32,8 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
 
   return db.begin(async (tx: any) => {
-    // Serialize model/category validation against the atomic SS.COM catalog snapshot.
-    await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:ss-catalog-sync'))`
+    // Serialize model/category validation against the atomic local catalog update.
+    await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:vehicle-catalog'))`
 
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
 
