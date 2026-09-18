@@ -70,6 +70,13 @@ describe('database booking constraints', () => {
     `, 'blocked_slots_booking_time_slot_chk')
   })
 
+  it('enforces case-insensitive unique vehicle registration numbers', async () => {
+    await expectConstraintViolation(sql`
+      INSERT INTO cars (user_id, make, model, registration_number, category)
+      VALUES (${userId}, 'Test', 'Duplicate Vehicle', ${`dc-${suffix}`}, 'passenger')
+    `, 'cars_registration_number_ci_idx')
+  })
+
   it('enforces one active booking per date and time while allowing history rows', async () => {
     const bookingDate = '2099-12-11'
     const bookingTime = '13:00'
