@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   return db.begin(async (tx) => {
     // Serialize against the SS.COM catalog snapshot writer so model/category
     // validation cannot observe a partially applied catalog snapshot.
-    await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:ss-catalog-sync'))`
+    await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:vehicle-catalog'))`
 
     const models = await tx`
       SELECT v.name, v.category
