@@ -102,22 +102,22 @@ await sql.begin(async (tx) => {
   // SS.COM is the authoritative source for rows marked source=ss.com.
   // Deactivate source rows that disappeared from the latest complete snapshot;
   // never delete them because existing customer cars/bookings may reference the catalog.
-  const staleMakes = await tx\`SELECT id, name FROM vehicle_makes WHERE source = ${SOURCE} AND active = TRUE\`
+  const staleMakes = await tx`SELECT id, name FROM vehicle_makes WHERE source = ${SOURCE} AND active = TRUE`
   for (const row of staleMakes) {
     if (!seenMakeNames.has(row.name)) {
-      await tx\`UPDATE vehicle_makes SET active = FALSE WHERE id = ${row.id}\`
+      await tx`UPDATE vehicle_makes SET active = FALSE WHERE id = ${row.id}`
     }
   }
 
-  const staleModels = await tx\`
+  const staleModels = await tx`
     SELECT v.id, v.make_id, v.name
     FROM vehicle_models v
     JOIN vehicle_makes m ON m.id = v.make_id
     WHERE v.source = ${SOURCE} AND v.active = TRUE
-  \`
+  `
   for (const row of staleModels) {
     if (!seenModelKeys.has(`${row.make_id}|${row.name}`)) {
-      await tx\`UPDATE vehicle_models SET active = FALSE WHERE id = ${row.id}\`
+      await tx`UPDATE vehicle_models SET active = FALSE WHERE id = ${row.id}`
     }
   }
 })
