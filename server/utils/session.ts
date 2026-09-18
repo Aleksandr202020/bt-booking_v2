@@ -13,10 +13,16 @@ export async function createSession(event: H3Event, userId: string) {
   const tokenHash = hashSessionToken(token)
   const db = getDb()
 
-  await db`
-    INSERT INTO sessions (user_id, token_hash, expires_at)
-    VALUES (${userId}, ${tokenHash}, now() + (${SESSION_TTL_SECONDS} * interval '1 second'))
-  `
+  await db.begin(async (tx) => {
+    // Remove only this user's expired sessions while preserving active sessions
+    // on other devices. This bounds stale session accumulation without changing
+    // the active-session model.
+    await tx`DELETE FROM sessions WHERE user_id = ${userId} AND expires_at <= now()`
+    await tx`
+      INSERT INTO sessions (user_id, token_hash, expires_at)
+      VALUES (${userId}, ${tokenHash}, now() + (${SESSION_TTL_SECONDS} * interval '1 second'))
+    `
+  })
 
   setCookie(event, SESSION_COOKIE, token, {
     httpOnly: true,
