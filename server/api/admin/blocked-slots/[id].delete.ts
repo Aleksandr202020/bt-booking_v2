@@ -15,13 +15,20 @@ export default defineEventHandler(async (event) => {
 
   return db.begin(async (tx) => {
     const rows = await tx`
-      SELECT id, booking_date, booking_time FROM blocked_slots WHERE id = ${id} FOR UPDATE
+      SELECT id, booking_date, booking_time FROM blocked_slots WHERE id = ${id}
     `
     if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'BLOCKED_SLOT_NOT_FOUND', data: { code: 'BLOCKED_SLOT_NOT_FOUND' } })
 
     const block = rows[0]
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${String(block.booking_date).slice(0, 10)}`}))`
+    const bookingDate = String(block.booking_date).slice(0, 10)
+    // Match create/update booking and block operations: date advisory lock first,
+    // then row lock, preventing a create/delete deadlock on the same calendar date.
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
 
+    const lockedRows = await tx`
+      SELECT id, booking_date, booking_time FROM blocked_slots WHERE id = ${id} FOR UPDATE
+    `
+    if (!lockedRows.length) throw createError({ statusCode: 404, statusMessage: 'BLOCKED_SLOT_NOT_FOUND', data: { code: 'BLOCKED_SLOT_NOT_FOUND' } })
     const deleted = await tx`
       DELETE FROM blocked_slots WHERE id = ${id} RETURNING id, booking_date, booking_time
     `
