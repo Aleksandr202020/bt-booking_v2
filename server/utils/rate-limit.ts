@@ -4,13 +4,20 @@ import { getDb } from './db'
 const LOGIN_WINDOW_SECONDS = 15 * 60
 const LOGIN_MAX_ATTEMPTS = 10
 
+async function withRateLimitLock<T>(key: string, fn: (tx: ReturnType<ReturnType<typeof getDb>['begin']>) => Promise<T>) {
+  const db = getDb()
+  return db.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`login-rate:${key}`}))`
+    return fn(tx as any)
+  })
+}
+
 export async function enforceLoginRateLimit(keys: string[]) {
   const db = getDb()
   const uniqueKeys = [...new Set(keys.filter(Boolean))]
 
   for (const key of uniqueKeys) {
-    const rows = await db.begin(async (tx) => {
-      return tx`
+    const rows = await withRateLimitLock(key, async (tx) => tx`
         INSERT INTO login_rate_limits (key, window_started_at, attempts)
         VALUES (${key}, now(), 1)
         ON CONFLICT (key) DO UPDATE
@@ -26,8 +33,7 @@ export async function enforceLoginRateLimit(keys: string[]) {
             ELSE login_rate_limits.attempts + 1
           END
         RETURNING attempts
-      `
-    })
+      `)
 
     if (Number(rows[0]?.attempts ?? 0) > LOGIN_MAX_ATTEMPTS) {
       throw createError({
@@ -43,7 +49,9 @@ export async function resetLoginRateLimit(keys: string[]) {
   const db = getDb()
   const uniqueKeys = [...new Set(keys.filter(Boolean))]
   if (!uniqueKeys.length) return
-  await db.begin(async (tx) => {
-    await tx`\n      UPDATE login_rate_limits\n      SET attempts = GREATEST(attempts - 1, 0)\n      WHERE key IN ${tx(uniqueKeys)}\n    `
-  })
+  for (const key of uniqueKeys) {
+    await withRateLimitLock(key, async (tx) => {
+      await tx`DELETE FROM login_rate_limits WHERE key = ${key}`
+    })
+  }
 }
