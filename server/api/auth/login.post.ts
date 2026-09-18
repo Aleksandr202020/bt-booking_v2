@@ -34,6 +34,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'INVALID_CREDENTIALS', data: { code: 'INVALID_CREDENTIALS' } })
   }
 
+  if (user.banned) {
+    await resetLoginRateLimit(rateLimitKeys)
+    throw createError({ statusCode: 403, statusMessage: 'CLIENT_BANNED', data: { code: 'CLIENT_BANNED' } })
+  }
+
   await resetLoginRateLimit(rateLimitKeys)
   await createSession(event, user.id)
   const { password_hash: _passwordHash, ...safeUser } = user
