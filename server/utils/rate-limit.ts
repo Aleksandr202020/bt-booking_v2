@@ -1,19 +1,22 @@
 import { createError } from 'h3'
+import { type TransactionSql } from 'postgres'
 import { getDb } from './db'
 
 const LOGIN_WINDOW_SECONDS = 15 * 60
 const LOGIN_MAX_ATTEMPTS = 10
 
-async function withRateLimitLock<T>(key: string, fn: (tx: ReturnType<ReturnType<typeof getDb>['begin']>) => Promise<T>) {
+async function withRateLimitLock<T>(
+  key: string,
+  fn: (tx: TransactionSql) => Promise<T>,
+) {
   const db = getDb()
   return db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`login-rate:${key}`}))`
-    return fn(tx as any)
+    return fn(tx)
   })
 }
 
 export async function enforceLoginRateLimit(keys: string[]) {
-  const db = getDb()
   const uniqueKeys = [...new Set(keys.filter(Boolean))]
 
   for (const key of uniqueKeys) {
@@ -46,7 +49,6 @@ export async function enforceLoginRateLimit(keys: string[]) {
 }
 
 export async function resetLoginRateLimit(keys: string[]) {
-  const db = getDb()
   const uniqueKeys = [...new Set(keys.filter(Boolean))]
   if (!uniqueKeys.length) return
   for (const key of uniqueKeys) {
