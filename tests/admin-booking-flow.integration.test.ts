@@ -22,8 +22,8 @@ function addDaysIso(days: number) {
   return date.toISOString().slice(0, 10)
 }
 
-const testDate = '2099-11-17'
-const holidayDate = '2099-11-18'
+const testDate = '2026-10-10'
+const holidayDate = '2026-10-11'
 
 beforeAll(async () => {
   const customerEmail = 'admin-flow-customer-' + suffix + '@example.test'
