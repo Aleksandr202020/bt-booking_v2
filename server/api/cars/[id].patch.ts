@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
     const [currentUser] = await tx`SELECT banned FROM users WHERE id = ${user.id} FOR SHARE`
     if (!currentUser || currentUser.banned) throw createError({ statusCode: 403, statusMessage: 'CLIENT_BANNED', data: { code: 'CLIENT_BANNED' } })
 
-    const owned = await tx`SELECT id FROM cars WHERE id = ${id} AND user_id = ${user.id} LIMIT 1`
+    const owned = await tx`SELECT id, make, model FROM cars WHERE id = ${id} AND user_id = ${user.id} LIMIT 1`
     if (!owned.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
 
   const models = await tx`
@@ -46,6 +46,24 @@ export default defineEventHandler(async (event) => {
     LIMIT 1
   `
   if (!models.length) throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL', data: { code: 'INVALID_VEHICLE_MODEL' } })
+
+    const vehicleChanged = owned[0].make !== body.make || owned[0].model !== body.model
+    if (vehicleChanged) {
+      const activeBookings = await tx`
+        SELECT id
+        FROM bookings
+        WHERE car_id = ${id}
+          AND status IN ('pending', 'confirmed')
+        LIMIT 1
+      `
+      if (activeBookings.length) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'CAR_HAS_ACTIVE_BOOKING',
+          data: { code: 'CAR_HAS_ACTIVE_BOOKING' },
+        })
+      }
+    }
 
   try {
     const rows = await tx`
