@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { z } from 'zod'
 import { getSessionUser } from '../utils/session'
 import { getSlotAvailability } from '../domain/availability/availability'
@@ -7,7 +8,11 @@ const querySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const query = querySchema.parse(getQuery(event))
+  const parsed = querySchema.safeParse(getQuery(event))
+  if (!parsed.success) {
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_AVAILABILITY_QUERY', data: { code: 'INVALID_AVAILABILITY_QUERY' } })
+  }
+  const query = parsed.data
   const user = await getSessionUser(event)
   const role = user?.role === 'admin' ? 'admin' : 'customer'
   const slots = await getSlotAvailability(query.date, role)
