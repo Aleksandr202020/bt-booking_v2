@@ -569,10 +569,21 @@ describe('admin booking flow integration', () => {
 
     expect(String(staleSnapshot.booking_time).slice(0, 5)).toBe('11:00')
 
-    const cancelled = await cancelAdminBooking(booking.id)
+    const cancelled = await cancelAdminBooking(booking.id, adminId)
     expect(cancelled.status).toBe('cancelled_admin')
     expect(String(cancelled.booking_time).slice(0, 5)).toBe('12:00')
     expect(cancelled.car_id).toBe(customerCrossoverCarId)
     expect(cancelled.notes).toBe('moved before cancellation')
+
+    const [audit] = await sql`
+      SELECT metadata FROM audit_logs
+      WHERE action = 'booking.cancelled_admin' AND target_id = ${booking.id}
+      ORDER BY created_at DESC LIMIT 1
+    `
+    const metadata = typeof audit.metadata === 'string' ? JSON.parse(audit.metadata) : audit.metadata
+    expect(metadata.previous.status).toBe('confirmed')
+    expect(String(metadata.previous.bookingTime).slice(0, 5)).toBe('12:00')
+    expect(metadata.current.status).toBe('cancelled_admin')
+    expect(String(metadata.current.bookingTime).slice(0, 5)).toBe('12:00')
   })
 })
