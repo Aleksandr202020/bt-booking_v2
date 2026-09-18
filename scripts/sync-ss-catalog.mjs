@@ -54,6 +54,13 @@ const makeLinks = extractLinks(mainHtml)
   .filter(({ href }) => /^\/lv\/transport\/cars\/[^/]+\/$/.test(href))
   .filter(({ href }) => !href.includes('/search'))
 
+// A successful HTTP response is not enough to treat the page as a valid
+// snapshot. If SS.COM returns an unexpected/challenge page, an empty parsed
+// catalog must never deactivate the entire existing catalog.
+if (makeLinks.length === 0) {
+  throw new Error('SS.COM catalog snapshot is empty or could not be parsed')
+}
+
 let modelCount = 0
 const seenMakeNames = new Set()
 const seenModelKeys = new Set()
