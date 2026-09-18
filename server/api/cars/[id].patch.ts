@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const owned = await tx`
-      SELECT id, make, model
+      SELECT id, make, model, registration_number, category
       FROM cars
       WHERE id = ${id} AND user_id = ${user.id}
       FOR UPDATE
@@ -111,7 +111,7 @@ export default defineEventHandler(async (event) => {
           data: { code: 'CAR_NOT_FOUND' },
         })
       }
-      await writeAuditLog({ actorId: user.id, action: 'car.updated', targetId: rows[0].id, metadata: { previous: { make: owned[0].make, model: owned[0].model }, current: { make: rows[0].make, model: rows[0].model, registrationNumber: rows[0].registration_number, category: rows[0].category } } }, tx)
+      await writeAuditLog({ actorId: user.id, action: 'car.updated', targetId: rows[0].id, metadata: { previous: { make: owned[0].make, model: owned[0].model, registrationNumber: owned[0].registration_number, category: owned[0].category }, current: { make: rows[0].make, model: rows[0].model, registrationNumber: rows[0].registration_number, category: rows[0].category } } }, tx)
       return { car: rows[0] }
     } catch (error: any) {
       if (error?.statusCode) throw error
