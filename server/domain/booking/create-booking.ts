@@ -47,11 +47,7 @@ export async function createBooking(input: {
 
   const db = getDb()
   return db.begin(async (tx) => {
-    // Every booking mutation uses the same user -> date lock order, including admin/manual booking.
-    // This keeps booking↔ban/unban and booking↔update races on one deterministic lock path.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${input.userId}`}))`
-
-    // Serialize booking/block/holiday mutations for this date before checking them.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${input.bookingDate}`}))`
 
     const users = await tx`
@@ -61,9 +57,6 @@ export async function createBooking(input: {
     if (!user) fail(BOOKING_ERROR_CODES.AUTH_REQUIRED, 401)
     if (user.banned) fail(BOOKING_ERROR_CODES.CLIENT_BANNED, 403)
 
-    // Re-check time and the customer booking window after acquiring the same
-    // user/date locks used by all booking writers. The early checks above are
-    // only fast rejection; this is the authoritative TOCTOU-safe validation.
     if (isPastSlot(input.bookingDate, input.bookingTime)) {
       fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
     }
@@ -124,7 +117,7 @@ export async function createBooking(input: {
         WHERE user_id = ${input.userId}
           AND car_id = ${input.carId}
           AND status IN ('pending', 'confirmed')
-          AND booking_date BETWEEN ${window.start} AND ${window.end}
+          AND booking_date BETWEEN ${lockedWindow.start} AND ${lockedWindow.end}
       `
       if (perCar[0].count >= maxCar) fail(BOOKING_ERROR_CODES.CAR_BOOKING_LIMIT_REACHED)
     }
