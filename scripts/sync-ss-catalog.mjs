@@ -55,11 +55,16 @@ const makeLinks = extractLinks(mainHtml)
   .filter(({ href }) => !href.includes('/search'))
 
 let modelCount = 0
-for (const { href, text } of makeLinks) {
+await sql.begin(async (tx) => {
+  // Serialize catalog writers and make the whole snapshot atomic: a failed sync
+  // must not leave a partially updated make/model catalog behind.
+  await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:ss-catalog-sync'))`
+
+
   const make = text.trim()
   if (!make) continue
 
-  const makeRows = await sql`
+  const makeRows = await tx`
     INSERT INTO vehicle_makes (name, source)
     VALUES (${make}, ${SOURCE})
     ON CONFLICT (name) DO UPDATE SET source = EXCLUDED.source
@@ -80,7 +85,7 @@ for (const { href, text } of makeLinks) {
     uniqueModels.add(model)
 
     const category = inferCategory(make, model)
-    await sql`
+    await tx`
       INSERT INTO vehicle_models (make_id, name, category, source)
       VALUES (${makeId}, ${model}, ${category}, ${SOURCE})
       ON CONFLICT (make_id, name)
@@ -89,6 +94,8 @@ for (const { href, text } of makeLinks) {
     modelCount += 1
   }
 }
+
+})
 
 console.log(`SS.COM catalog sync complete: ${makeLinks.length} makes, ${modelCount} models.`)
 await sql.end()
