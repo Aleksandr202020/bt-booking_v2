@@ -14,9 +14,9 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
   return db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
-    const rows = await tx`UPDATE users SET banned = FALSE, ban_reason = NULL, banned_at = NULL, updated_at = now() WHERE id = ${userId}::uuid AND role = 'customer' RETURNING id, banned, ban_reason, banned_at`
+    const rows = await tx`UPDATE users SET banned = FALSE, ban_reason = NULL, banned_at = NULL, updated_at = now() WHERE id = ${userId}::uuid AND role = 'customer' RETURNING id, name, email, phone, role, banned, ban_reason, banned_at`
     if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CUSTOMER_NOT_FOUND', data: { code: 'CUSTOMER_NOT_FOUND' } })
-    await writeAuditLog({ actorId: admin.id, action: 'UNBAN_USER', targetId: userId }, tx)
+    await writeAuditLog({ actorId: admin.id, action: 'UNBAN_USER', targetId: userId, metadata: rows[0] }, tx)
     return { user: rows[0] }
   })
 })
