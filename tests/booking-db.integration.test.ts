@@ -1,6 +1,7 @@
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createBooking } from '../server/domain/booking/create-booking'
+import { updateBooking } from '../server/domain/booking/update-booking'
 
 const databaseUrl = process.env.DATABASE_URL
 
@@ -66,6 +67,43 @@ describe('PostgreSQL booking integrity', () => {
     expect(indexDef).toContain('booking_time')
     expect(indexDef).toContain('pending')
     expect(indexDef).toContain('confirmed')
+  })
+
+  it('preserves the booked price when the car category changes later', async () => {
+    const bookingDate = '2099-12-27'
+    const bookingTime = '17:00'
+
+    const booking = await createBooking({
+      userId,
+      carId,
+      bookingDate,
+      bookingTime,
+    })
+    expect(booking.price_cents).toBe(2500)
+
+    await sql`UPDATE cars SET category = 'crossover' WHERE id = ${carId}`
+
+    const updated = await updateBooking({
+      bookingId: booking.id,
+      userId,
+      carId,
+      bookingDate,
+      bookingTime,
+      status: 'confirmed',
+      notes: 'metadata edit after car category change',
+    })
+
+    expect(Number(updated.price_cents)).toBe(2500)
+
+    const [stored] = await sql`
+      SELECT price_cents
+      FROM bookings
+      WHERE id = ${booking.id}
+    `
+    expect(Number(stored.price_cents)).toBe(2500)
+
+    await sql`DELETE FROM bookings WHERE id = ${booking.id}`
+    await sql`UPDATE cars SET category = 'passenger' WHERE id = ${carId}`
   })
 
   it('allows one concurrent reservation and rejects the conflicting reservation', async () => {
