@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
   const id = getRouterParam(event, 'id')
   if (!id || !uuidSchema.safeParse(id).success) {
-    throw createError({ statusCode: 400, statusMessage: 'INVALID_CAR_ID' })
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_CAR_ID', data: { code: 'INVALID_CAR_ID' } })
   }
 
   const db = getDb()
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
       WHERE id = ${id}
       LIMIT 1
     `
-    if (!owners.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+    if (!owners.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
 
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${owners[0].user_id}`}))`
 
@@ -47,11 +47,11 @@ export default defineEventHandler(async (event) => {
     }
 
     try {
-      const rows = await tx`DELETE FROM cars WHERE id = ${id} RETURNING id`
+      const rows = await tx`DELETE FROM cars WHERE id = ${id} RETURNING id, user_id, make, model, registration_number, category`
       if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
 
-      await writeAuditLog({ actorId: admin.id, action: 'car.deleted', targetId: id }, tx)
-      return { ok: true }
+      await writeAuditLog({ actorId: admin.id, action: 'car.deleted', targetId: id, metadata: { userId: rows[0].user_id, make: rows[0].make, model: rows[0].model, registrationNumber: rows[0].registration_number, category: rows[0].category } }, tx)
+      return { deleted: true, id: rows[0].id }
     } catch (error: any) {
       if (error?.statusCode) throw error
       if (error?.code === '23503') {
