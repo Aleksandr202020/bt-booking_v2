@@ -30,7 +30,12 @@ export default defineEventHandler(async (event) => {
   const body = parsed.data
   const db = getDb()
 
-  const models = await db`
+  return db.begin(async (tx: any) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
+    const owned = await tx`SELECT id FROM cars WHERE id = ${id} AND user_id = ${user.id} LIMIT 1`
+    if (!owned.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
+
+  const models = await tx`
     SELECT v.category
     FROM vehicle_models v
     JOIN vehicle_makes m ON m.id = v.make_id
@@ -40,7 +45,7 @@ export default defineEventHandler(async (event) => {
   if (!models.length) throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL', data: { code: 'INVALID_VEHICLE_MODEL' } })
 
   try {
-    const rows = await db`
+    const rows = await tx`
       UPDATE cars
       SET make = ${body.make}, model = ${body.model}, registration_number = ${body.registrationNumber},
           category = ${models[0].category}, updated_at = now()
@@ -58,6 +63,6 @@ export default defineEventHandler(async (event) => {
         data: { code: 'REGISTRATION_ALREADY_EXISTS' },
       })
     }
-    throw error
-  }
+    throw error  }
+  })
 })
