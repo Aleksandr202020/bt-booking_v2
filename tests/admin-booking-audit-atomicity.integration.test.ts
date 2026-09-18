@@ -45,6 +45,28 @@ afterAll(async () => {
 })
 
 describe('admin booking audit atomicity', () => {
+  it('rolls back admin booking creation when the audit insert fails', async () => {
+    const invalidAuditActorId = '00000000-0000-0000-0000-000000000000'
+
+    await expect(createBooking({
+      userId,
+      carId,
+      bookingDate,
+      bookingTime: '14:00',
+      isAdmin: true,
+      auditActorId: invalidAuditActorId,
+      notes: 'should not persist',
+    })).rejects.toBeDefined()
+
+    const rows = await sql`
+      SELECT id FROM bookings
+      WHERE user_id = ${userId}
+        AND booking_date = ${bookingDate}
+        AND booking_time = '14:00'
+    `
+    expect(rows).toHaveLength(0)
+  })
+
   it('rolls back the booking update when the audit insert fails', async () => {
     const booking = await createBooking({
       userId,
