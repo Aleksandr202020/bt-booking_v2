@@ -36,7 +36,7 @@ export async function getSlotAvailability(date: string, userRole: 'customer' | '
       state = 'outside_booking_window'
     } else if (wholeDayBlock || blockByTime.has(time)) {
       state = 'blocked'
-      reason = blockByTime.get(time)?.reason
+      reason = userRole === 'admin' ? blockByTime.get(time)?.reason : undefined
     } else if (bookingByTime.has(time)) {
       state = 'booked'
     }
