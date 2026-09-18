@@ -18,6 +18,9 @@ export default defineEventHandler(async (event) => {
     // Serialize car deletion with customer booking creation/update through the same user lock.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
 
+    const [currentUser] = await tx`SELECT banned FROM users WHERE id = ${user.id} FOR SHARE`
+    if (!currentUser || currentUser.banned) throw createError({ statusCode: 403, statusMessage: 'CLIENT_BANNED', data: { code: 'CLIENT_BANNED' } })
+
     const owned = await tx`
       SELECT id
       FROM cars
