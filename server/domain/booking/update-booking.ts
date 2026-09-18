@@ -79,7 +79,7 @@ export async function updateBooking(input: {
         }
 
         const lockedRows = await tx`
-          SELECT id, user_id, car_id, booking_date, booking_time, price_cents, status
+          SELECT id, user_id, car_id, booking_date, booking_time, price_cents, status, notes
           FROM bookings
           WHERE id = ${input.bookingId}
           FOR UPDATE
