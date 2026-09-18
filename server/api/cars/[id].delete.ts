@@ -18,10 +18,20 @@ export default defineEventHandler(async (event) => {
     // Serialize car deletion with customer booking creation/update through the same user lock.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
 
+    const owned = await tx`
+      SELECT id
+      FROM cars
+      WHERE id = ${id} AND user_id = ${user.id}
+      LIMIT 1
+    `
+    if (!owned.length) {
+      throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
+    }
+
     const active = await tx`
       SELECT 1
       FROM bookings
-      WHERE car_id = ${id} AND status IN ('pending', 'confirmed')
+      WHERE car_id = ${id} AND user_id = ${user.id} AND status IN ('pending', 'confirmed')
       LIMIT 1
     `
     if (active.length) {
