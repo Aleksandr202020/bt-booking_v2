@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { z } from 'zod'
 import { requireAdmin } from '../../utils/authorization'
 import { getDb } from '../../utils/db'
@@ -10,17 +11,13 @@ const schema = z.object({
 
 export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
-  const body = schema.parse(await readBody(event))
+  const parsed = schema.safeParse(await readBody(event))
+  if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'INVALID_SETTING_REQUEST', data: { code: 'INVALID_SETTING_REQUEST' } })
+  const body = parsed.data
   const db = getDb()
-
   return db.begin(async (tx) => {
-    const rows = await tx`
-      UPDATE app_settings SET value = ${JSON.stringify(body.value)}::jsonb, updated_at = now()
-      WHERE key = ${body.key}
-      RETURNING key, value
-    `
+    const rows = await tx`UPDATE app_settings SET value = ${JSON.stringify(body.value)}::jsonb, updated_at = now() WHERE key = ${body.key} RETURNING key, value`
     if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'SETTING_NOT_FOUND' })
-
     await writeAuditLog({ actorId: admin.id, action: 'setting.updated', metadata: { key: body.key, value: body.value } }, tx)
     return { setting: rows[0] }
   })
