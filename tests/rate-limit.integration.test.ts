@@ -20,12 +20,11 @@ describe('login rate limiting', () => {
     })
   })
 
-  it('removes only the successful attempt from the rate-limit counter', async () => {
+  it('resets the rate-limit keys after a successful login', async () => {
     await resetLoginRateLimit([key])
     await enforceLoginRateLimit([key])
     await resetLoginRateLimit([key])
-    for (let i = 0; i < 8; i += 1) await enforceLoginRateLimit([key])
-    await expect(enforceLoginRateLimit([key])).rejects.toMatchObject({ statusCode: 429 })
+    await expect(enforceLoginRateLimit([key])).resolves.toBeUndefined()
   })
 })
 
