@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getRigaNowParts, isPastSlot } from '../server/domain/booking/dates'
+import { getRigaNowParts, isPastSlot, isValidIsoDate } from '../server/domain/booking/dates'
 
 const SLOTS = Array.from({ length: 12 }, (_, i) => `${String(9 + i).padStart(2, '0')}:00`)
 
@@ -20,6 +20,20 @@ function resolveState(input: {
   if (input.booked) return 'booked'
   return 'available'
 }
+
+describe('ISO date validation', () => {
+  it('rejects impossible calendar dates', () => {
+    expect(isValidIsoDate('2026-02-30')).toBe(false)
+    expect(isValidIsoDate('2026-13-01')).toBe(false)
+    expect(isValidIsoDate('2026-00-10')).toBe(false)
+  })
+
+  it('accepts real calendar dates including leap day', () => {
+    expect(isValidIsoDate('2026-09-18')).toBe(true)
+    expect(isValidIsoDate('2028-02-29')).toBe(true)
+    expect(isValidIsoDate('2027-02-29')).toBe(false)
+  })
+})
 
 describe('availability core rules', () => {
   it('always has exactly 12 working slots', () => {
