@@ -55,6 +55,8 @@ const makeLinks = extractLinks(mainHtml)
   .filter(({ href }) => !href.includes('/search'))
 
 let modelCount = 0
+const seenMakeNames = new Set()
+const seenModelKeys = new Set()
 await sql.begin(async (tx) => {
   // Serialize catalog writers and make the whole snapshot atomic: a failed sync
   // must not leave a partially updated make/model catalog behind.
@@ -63,6 +65,7 @@ await sql.begin(async (tx) => {
   for (const { href: makeHref, text } of makeLinks) {
     const make = text.trim()
     if (!make) continue
+    seenMakeNames.add(make)
 
     const makeRows = await tx`
       INSERT INTO vehicle_makes (name, source)
@@ -85,6 +88,7 @@ await sql.begin(async (tx) => {
       uniqueModels.add(model)
 
       const category = inferCategory(make, model)
+      seenModelKeys.add(`${makeId}|${model}`)
       await tx`
         INSERT INTO vehicle_models (make_id, name, category, source)
         VALUES (${makeId}, ${model}, ${category}, ${SOURCE})
@@ -92,6 +96,28 @@ await sql.begin(async (tx) => {
         DO UPDATE SET category = EXCLUDED.category, source = EXCLUDED.source, active = TRUE
       `
       modelCount += 1
+    }
+  }
+
+  // SS.COM is the authoritative source for rows marked source=ss.com.
+  // Deactivate source rows that disappeared from the latest complete snapshot;
+  // never delete them because existing customer cars/bookings may reference the catalog.
+  const staleMakes = await tx\`SELECT id, name FROM vehicle_makes WHERE source = ${SOURCE} AND active = TRUE\`
+  for (const row of staleMakes) {
+    if (!seenMakeNames.has(row.name)) {
+      await tx\`UPDATE vehicle_makes SET active = FALSE WHERE id = ${row.id}\`
+    }
+  }
+
+  const staleModels = await tx\`
+    SELECT v.id, v.make_id, v.name
+    FROM vehicle_models v
+    JOIN vehicle_makes m ON m.id = v.make_id
+    WHERE v.source = ${SOURCE} AND v.active = TRUE AND m.active = TRUE
+  \`
+  for (const row of staleModels) {
+    if (!seenModelKeys.has(`${row.make_id}|${row.name}`)) {
+      await tx\`UPDATE vehicle_models SET active = FALSE WHERE id = ${row.id}\`
     }
   }
 })
