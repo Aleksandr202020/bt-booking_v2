@@ -1,7 +1,5 @@
 import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { addCalendarDays, getRigaNowParts } from '../server/domain/booking/dates'
-
 const databaseUrl = process.env.DATABASE_URL
 if (!databaseUrl) throw new Error('DATABASE_URL is required for database constraint tests')
 
@@ -45,11 +43,11 @@ afterAll(async () => {
 })
 
 async function expectConstraintViolation(query: Promise<unknown>, constraint: string) {
-  await expect(query).rejects.toMatchObject({ code: '23505', constraint_name })
+  await expect(query).rejects.toMatchObject({ code: '23505', constraint_name: constraint })
 }
 
 async function expectCheckViolation(query: Promise<unknown>, constraint: string) {
-  await expect(query).rejects.toMatchObject({ code: '23514', constraint_name })
+  await expect(query).rejects.toMatchObject({ code: '23514', constraint_name: constraint })
 }
 
 describe('database booking constraints', () => {
