@@ -26,6 +26,23 @@ describe('login rate limiting', () => {
     await resetLoginRateLimit([key])
     await expect(enforceLoginRateLimit([key])).resolves.toBeUndefined()
   })
+
+  it('serializes concurrent attempts for the same key at the database boundary', async () => {
+    await resetLoginRateLimit([key])
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, () => enforceLoginRateLimit([key])),
+    )
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(10)
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(10)
+    expect(results.filter((result) => result.status === 'rejected').every(
+      (result) => result.reason?.statusCode === 429 && result.reason?.data?.code === 'RATE_LIMITED',
+    )).toBe(true)
+
+    const [row] = await sql`SELECT attempts FROM login_rate_limits WHERE key = ${key}`
+    expect(Number(row.attempts)).toBe(20)
+  })
 })
 
 afterAll(async () => {
