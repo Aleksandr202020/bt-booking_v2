@@ -452,10 +452,14 @@ describe('admin booking flow integration', () => {
     expect(audits.length).toBe(2)
     const firstMetadata = typeof audits[0].metadata === 'string' ? JSON.parse(audits[0].metadata) : audits[0].metadata
     const secondMetadata = typeof audits[1].metadata === 'string' ? JSON.parse(audits[1].metadata) : audits[1].metadata
-    expect(firstMetadata.previousStatus).toBe('confirmed')
-    expect(firstMetadata.status).toBe('completed')
-    expect(secondMetadata.previousStatus).toBe('completed')
-    expect(secondMetadata.status).toBe('confirmed')
+    expect(firstMetadata.previous.status).toBe('confirmed')
+    expect(firstMetadata.previous.bookingTime).toContain('15:00')
+    expect(firstMetadata.current.status).toBe('completed')
+    expect(firstMetadata.current.bookingTime).toContain('15:00')
+    expect(secondMetadata.previous.status).toBe('completed')
+    expect(secondMetadata.current.status).toBe('confirmed')
+    expect(secondMetadata.current.carId).toBe(customerCrossoverCarId)
+    expect(secondMetadata.current.priceCents).toBe(3000)
   })
 
 
