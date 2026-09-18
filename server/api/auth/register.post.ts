@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { z } from 'zod'
 import { hashPassword } from '../../domain/auth/auth'
 import { getDb } from '../../utils/db'
@@ -11,7 +12,11 @@ const registerSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const body = registerSchema.parse(await readBody(event))
+  const parsed = registerSchema.safeParse(await readBody(event))
+  if (!parsed.success) {
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_REGISTER_REQUEST', data: { code: 'INVALID_REGISTER_REQUEST' } })
+  }
+  const body = parsed.data
   const db = getDb()
   const passwordHash = await hashPassword(body.password)
 
