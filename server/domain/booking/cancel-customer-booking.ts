@@ -91,6 +91,18 @@ export async function cancelCustomerBooking(bookingId: string, userId: string) {
         bookingDate: cancelled.booking_date,
         bookingTime: cancelled.booking_time,
         previousStatus: booking.status,
+        previous: {
+          userId: booking.user_id,
+          bookingDate: booking.booking_date,
+          bookingTime: booking.booking_time,
+          status: booking.status,
+        },
+        current: {
+          userId: cancelled.user_id,
+          bookingDate: cancelled.booking_date,
+          bookingTime: cancelled.booking_time,
+          status: cancelled.status,
+        },
       },
     }, tx)
 
