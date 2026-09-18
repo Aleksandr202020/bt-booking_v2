@@ -134,7 +134,15 @@ export async function createBooking(input: {
           actorId: input.auditActorId,
           action: 'booking.created',
           targetId: inserted[0].id,
-          metadata: { userId: input.userId, carId: input.carId, bookingDate: input.bookingDate, bookingTime: input.bookingTime },
+          metadata: {
+            userId: inserted[0].user_id,
+            carId: inserted[0].car_id,
+            bookingDate: inserted[0].booking_date,
+            bookingTime: inserted[0].booking_time,
+            priceCents: inserted[0].price_cents,
+            status: inserted[0].status,
+            notes: inserted[0].notes,
+          },
         }, tx)
       }
       return inserted[0]
