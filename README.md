@@ -21,9 +21,11 @@ Build from business rules and data integrity first: database → constraints →
 
 ## Vehicle catalog
 
-The customer car make/model catalog is based on the current passenger-car structure published by SS.COM Latvia. The application does not depend on SS.COM during booking; `catalog:sync` creates a local database snapshot. Explicit business classifications include Škoda Kamiq → crossover, Opel Zafira → crossover, Volkswagen Caddy → commercial, Citroen Berlingo → commercial, and Mercedes V-Class → minivan.
+The vehicle make/model catalog is a **local application-owned PostgreSQL catalog**. Customer and admin booking flows read only from the local database; SS.COM or any other external site is not contacted at runtime.
 
-Source: https://www.ss.com/lv/transport/cars/
+The catalog contains vehicle make/model names and the business pricing category used by the booking engine. Explicit business classifications include Škoda Kamiq → crossover, Opel Zafira → crossover, Volkswagen Caddy → commercial, Citroen Berlingo → commercial, and Mercedes V-Class → minivan.
+
+Catalog data is managed as application-owned database data and can be extended without introducing an external runtime dependency.
 
 ## Development
 
