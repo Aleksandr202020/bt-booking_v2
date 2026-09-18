@@ -1,4 +1,5 @@
 import { createError } from 'h3'
+import { z } from 'zod'
 import { requireAdmin } from '../../../utils/authorization'
 import { getDb } from '../../../utils/db'
 import { writeAuditLog } from '../../../utils/audit'
