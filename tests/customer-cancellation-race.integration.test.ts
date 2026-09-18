@@ -93,6 +93,17 @@ describe('customer cancellation concurrency', () => {
     `
     expect(originalRows[0].status).toBe('cancelled_customer')
 
+    const [audit] = await sql`
+      SELECT metadata FROM audit_logs
+      WHERE action = 'booking.cancelled_customer' AND target_id = ${booking.id}
+      ORDER BY created_at DESC LIMIT 1
+    `
+    const metadata = typeof audit.metadata === 'string' ? JSON.parse(audit.metadata) : audit.metadata
+    expect(metadata.previous.status).toBe('confirmed')
+    expect(String(metadata.previous.bookingTime).slice(0, 5)).toBe(bookingTime)
+    expect(metadata.current.status).toBe('cancelled_customer')
+
+    await sql`DELETE FROM audit_logs WHERE target_id = ${booking.id}`
     await sql`DELETE FROM bookings WHERE booking_date = ${bookingDate} AND booking_time = ${bookingTime}`
   })
 })
