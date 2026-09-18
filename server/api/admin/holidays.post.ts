@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { z } from 'zod'
 import { requireAdmin } from '../../utils/authorization'
 import { writeAuditLog } from '../../utils/audit'
@@ -11,60 +12,23 @@ const schema = z.object({
 
 export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
-  const body = schema.parse(await readBody(event))
-
-  if (!isValidIsoDate(body.date)) {
-    throw createError({ statusCode: 400, statusMessage: 'INVALID_DATE', data: { code: 'INVALID_DATE' } })
-  }
-
+  const parsed = schema.safeParse(await readBody(event))
+  if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'INVALID_HOLIDAY_REQUEST', data: { code: 'INVALID_HOLIDAY_REQUEST' } })
+  const body = parsed.data
+  if (!isValidIsoDate(body.date)) throw createError({ statusCode: 400, statusMessage: 'INVALID_DATE', data: { code: 'INVALID_DATE' } })
   const db = getDb()
   return db.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${body.date}`}))`
-
-    const activeBookings = await tx`
-      SELECT id FROM bookings
-      WHERE booking_date = ${body.date}
-        AND status IN ('pending', 'confirmed')
-      LIMIT 1
-    `
-    if (activeBookings.length) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'ACTIVE_BOOKING_EXISTS',
-        data: { code: 'ACTIVE_BOOKING_EXISTS' },
-      })
-    }
-
-    const activeBlocks = await tx`
-      SELECT id FROM blocked_slots
-      WHERE booking_date = ${body.date}
-      LIMIT 1
-    `
-    if (activeBlocks.length) {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'SLOT_ALREADY_BLOCKED',
-        data: { code: 'SLOT_ALREADY_BLOCKED' },
-      })
-    }
-
+    const activeBookings = await tx`SELECT id FROM bookings WHERE booking_date = ${body.date} AND status IN ('pending', 'confirmed') LIMIT 1`
+    if (activeBookings.length) throw createError({ statusCode: 409, statusMessage: 'ACTIVE_BOOKING_EXISTS', data: { code: 'ACTIVE_BOOKING_EXISTS' } })
+    const activeBlocks = await tx`SELECT id FROM blocked_slots WHERE booking_date = ${body.date} LIMIT 1`
+    if (activeBlocks.length) throw createError({ statusCode: 409, statusMessage: 'SLOT_ALREADY_BLOCKED', data: { code: 'SLOT_ALREADY_BLOCKED' } })
     try {
-      const rows = await tx`
-        INSERT INTO holidays (date, name, active)
-        VALUES (${body.date}, ${body.name}, TRUE)
-        RETURNING *
-      `
-      await writeAuditLog({
-        actorId: admin.id,
-        action: 'holiday.created',
-        targetId: rows[0].id,
-        metadata: rows[0],
-      }, tx)
+      const rows = await tx`INSERT INTO holidays (date, name, active) VALUES (${body.date}, ${body.name}, TRUE) RETURNING *`
+      await writeAuditLog({ actorId: admin.id, action: 'holiday.created', targetId: rows[0].id, metadata: rows[0] }, tx)
       return { holiday: rows[0] }
     } catch (error: any) {
-      if (error?.code === '23505') {
-        throw createError({ statusCode: 409, statusMessage: 'HOLIDAY_ALREADY_EXISTS', data: { code: 'HOLIDAY_ALREADY_EXISTS' } })
-      }
+      if (error?.code === '23505') throw createError({ statusCode: 409, statusMessage: 'HOLIDAY_ALREADY_EXISTS', data: { code: 'HOLIDAY_ALREADY_EXISTS' } })
       throw error
     }
   })
