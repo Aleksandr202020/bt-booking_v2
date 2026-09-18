@@ -43,7 +43,9 @@ export default defineEventHandler(async (event) => {
       await writeAuditLog({ actorId: admin.id, action: 'blocked_slot.created', targetId: rows[0].id, metadata: rows[0] }, tx)
       return { blockedSlot: rows[0] }
     } catch (error: any) {
-      if (error?.code === '23505') throw createError({ statusCode: 409, statusMessage: 'SLOT_ALREADY_BLOCKED', data: { code: 'SLOT_ALREADY_BLOCKED' } })
+      if (error?.code === '23505' || (error?.code === '23514' && error?.constraint_name === 'blocked_slots_scope_conflict_chk')) {
+        throw createError({ statusCode: 409, statusMessage: 'SLOT_ALREADY_BLOCKED', data: { code: 'SLOT_ALREADY_BLOCKED' } })
+      }
       throw error
     }
   })
