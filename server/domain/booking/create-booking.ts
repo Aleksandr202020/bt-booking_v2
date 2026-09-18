@@ -11,10 +11,9 @@ function fail(code: string, statusCode = 409): never {
   throw createError({ statusCode, statusMessage: code, data: { code } })
 }
 
-async function getCustomerWindow(now = new Date()) {
-  const db = getDb()
-  const settings = await db`
-    SELECT value FROM app_settings WHERE key = 'customer_booking_window_days' LIMIT 1
+async function getCustomerWindow(now = new Date(), client: any = getDb()) {
+  const settings = await client`
+    SELECT value FROM app_settings WHERE key = 'customer_booking_window_days' LIMIT 1 FOR SHARE
   `
   const configured = settings[0]?.value
   const windowDays = typeof configured === 'number' ? configured : DEFAULT_BOOKING_WINDOW_DAYS
@@ -63,7 +62,7 @@ export async function createBooking(input: {
 
     let lockedWindow: Awaited<ReturnType<typeof getCustomerWindow>> | null = null
     if (!input.isAdmin) {
-      lockedWindow = await getCustomerWindow()
+      lockedWindow = await getCustomerWindow(new Date(), tx)
       if (
         daysBetween(lockedWindow.start, input.bookingDate) < 0
         || daysBetween(lockedWindow.start, input.bookingDate) > lockedWindow.windowDays
@@ -99,6 +98,7 @@ export async function createBooking(input: {
       const settings = await tx`
         SELECT key, value FROM app_settings
         WHERE key IN ('max_customer_bookings_in_window', 'max_customer_bookings_per_car_in_window')
+        FOR SHARE
       `
       const map = new Map(settings.map((row: any) => [row.key, row.value]))
       const maxTotal = typeof map.get('max_customer_bookings_in_window') === 'number' ? map.get('max_customer_bookings_in_window') : 3
