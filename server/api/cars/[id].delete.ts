@@ -1,7 +1,7 @@
 import { createError } from 'h3'
 import { z } from 'zod'
-import { requireUnbannedUser } from '../../../utils/authorization'
-import { getDb } from '../../../utils/db'
+import { requireUnbannedUser } from '../../utils/authorization'
+import { getDb } from '../../utils/db'
 
 const uuidSchema = z.string().uuid()
 
@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  return db.begin(async (tx) => {
+  return db.begin(async (tx: any) => {
     // Serialize car deletion with customer booking creation/update through the same user lock.
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
 
