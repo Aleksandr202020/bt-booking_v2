@@ -10,9 +10,29 @@ export async function cancelCustomerBooking(bookingId: string, userId: string) {
   const db = getDb()
 
   return db.begin(async (tx) => {
-    // Keep the lock order consistent with admin booking updates: booking row first,
-    // then the calendar-date advisory lock. The date lock serializes cancellation
-    // with booking/block/holiday mutations for the same calendar date.
+    // Acquire the same advisory locks used by booking creation/update before
+    // taking the booking row lock. This prevents cancellation↔creation deadlocks.
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
+
+    const snapshotRows = await tx`
+      SELECT id, user_id, booking_date, booking_time, status
+      FROM bookings
+      WHERE id = ${bookingId}
+    `
+    const snapshot = snapshotRows[0]
+
+    if (!snapshot || snapshot.user_id !== userId || !ACTIVE_STATUSES.includes(snapshot.status)) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'BOOKING_NOT_FOUND_OR_NOT_CANCELLABLE',
+        data: { code: 'BOOKING_NOT_FOUND_OR_NOT_CANCELLABLE' },
+      })
+    }
+
+    const bookingDate = String(snapshot.booking_date).slice(0, 10)
+    const bookingTime = String(snapshot.booking_time).slice(0, 5)
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
+
     const existingRows = await tx`
       SELECT id, user_id, booking_date, booking_time, status
       FROM bookings
@@ -21,7 +41,14 @@ export async function cancelCustomerBooking(bookingId: string, userId: string) {
     `
     const booking = existingRows[0]
 
-    if (!booking || booking.user_id !== userId || !ACTIVE_STATUSES.includes(booking.status)) {
+    // The source row may have changed while advisory locks were being acquired.
+    // Abort rather than operating on stale ownership/date/status information.
+    if (
+      !booking ||
+      booking.user_id !== userId ||
+      String(booking.booking_date).slice(0, 10) !== bookingDate ||
+      !ACTIVE_STATUSES.includes(booking.status)
+    ) {
       throw createError({
         statusCode: 404,
         statusMessage: 'BOOKING_NOT_FOUND_OR_NOT_CANCELLABLE',
@@ -29,12 +56,7 @@ export async function cancelCustomerBooking(bookingId: string, userId: string) {
       })
     }
 
-    const bookingDate = String(booking.booking_date).slice(0, 10)
-    const bookingTime = String(booking.booking_time).slice(0, 5)
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
-
-    // Re-check the time after acquiring the date lock. This is deliberately done
-    // inside the same transaction as the status update.
+    // Re-check the time after acquiring all locks, inside the same transaction.
     if (isPastSlot(bookingDate, bookingTime)) {
       throw createError({
         statusCode: 404,
