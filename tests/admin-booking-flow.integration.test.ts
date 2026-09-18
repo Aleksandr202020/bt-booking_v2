@@ -450,10 +450,12 @@ describe('admin booking flow integration', () => {
 
     const audits = await sql`SELECT action, metadata FROM audit_logs WHERE action = 'booking.updated' AND target_id = ${booking.id} ORDER BY created_at ASC`
     expect(audits.length).toBe(2)
-    expect(audits[0].metadata.previousStatus).toBe('confirmed')
-    expect(audits[0].metadata.status).toBe('completed')
-    expect(audits[1].metadata.previousStatus).toBe('completed')
-    expect(audits[1].metadata.status).toBe('confirmed')
+    const firstMetadata = typeof audits[0].metadata === 'string' ? JSON.parse(audits[0].metadata) : audits[0].metadata
+    const secondMetadata = typeof audits[1].metadata === 'string' ? JSON.parse(audits[1].metadata) : audits[1].metadata
+    expect(firstMetadata.previousStatus).toBe('confirmed')
+    expect(firstMetadata.status).toBe('completed')
+    expect(secondMetadata.previousStatus).toBe('completed')
+    expect(secondMetadata.status).toBe('confirmed')
   })
 
 
