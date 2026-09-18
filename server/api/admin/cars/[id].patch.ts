@@ -14,15 +14,71 @@ const uuidSchema = z.string().uuid()
 export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
   const id = getRouterParam(event, 'id')
-  if (!id || !uuidSchema.safeParse(id).success) throw createError({ statusCode: 400, statusMessage: 'INVALID_CAR_ID', data: { code: 'INVALID_CAR_ID' } })
+  if (!id || !uuidSchema.safeParse(id).success) {
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_CAR_ID', data: { code: 'INVALID_CAR_ID' } })
+  }
   const parsed = schema.safeParse(await readBody(event))
   if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'INVALID_CAR_REQUEST', data: { code: 'INVALID_CAR_REQUEST' } })
   const body = parsed.data
+
   const db = getDb()
-  const model = await db`SELECT v.category FROM vehicle_models v JOIN vehicle_makes m ON m.id=v.make_id WHERE m.name=${body.make} AND v.name=${body.model} AND m.active=true AND v.active=true LIMIT 1`
-  if (!model.length) throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL' })
-  const rows = await db`UPDATE cars SET make=${body.make},model=${body.model},registration_number=${body.registrationNumber},category=${model[0].category},updated_at=now() WHERE id=${id} RETURNING *`
-  if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
-  await writeAuditLog({ actorId: admin.id, action: 'car.updated', targetId: id, metadata: { make: body.make, model: body.model, registrationNumber: body.registrationNumber } })
-  return { car:rows[0] }
+  return db.begin(async (tx) => {
+    const cars = await tx`
+      SELECT id, user_id
+      FROM cars
+      WHERE id = ${id}
+      LIMIT 1
+    `
+    if (!cars.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${cars[0].user_id}`}))`
+
+    const model = await tx`
+      SELECT v.category
+      FROM vehicle_models v
+      JOIN vehicle_makes m ON m.id = v.make_id
+      WHERE m.name = ${body.make}
+        AND v.name = ${body.model}
+        AND m.active = true
+        AND v.active = true
+      LIMIT 1
+    `
+    if (!model.length) throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL' })
+
+    try {
+      const rows = await tx`
+        UPDATE cars
+        SET make = ${body.make},
+            model = ${body.model},
+            registration_number = ${body.registrationNumber},
+            category = ${model[0].category},
+            updated_at = now()
+        WHERE id = ${id}
+        RETURNING *
+      `
+      if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+
+      await writeAuditLog({
+        actorId: admin.id,
+        action: 'car.updated',
+        targetId: id,
+        metadata: {
+          make: body.make,
+          model: body.model,
+          registrationNumber: body.registrationNumber,
+        },
+      }, tx)
+      return { car: rows[0] }
+    } catch (error: any) {
+      if (error?.statusCode) throw error
+      if (error?.code === '23505') {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'REGISTRATION_ALREADY_EXISTS',
+          data: { code: 'REGISTRATION_ALREADY_EXISTS' },
+        })
+      }
+      throw error
+    }
+  })
 })
