@@ -23,15 +23,23 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
   return db.begin(async (tx) => {
-    const cars = await tx`
-      SELECT id, user_id, make, model
+    const owners = await tx`
+      SELECT user_id
       FROM cars
       WHERE id = ${id}
       LIMIT 1
     `
-    if (!cars.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+    if (!owners.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
 
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${cars[0].user_id}`}))`
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${owners[0].user_id}`}))`
+
+    const cars = await tx`
+      SELECT id, user_id, make, model
+      FROM cars
+      WHERE id = ${id}
+      FOR UPDATE
+    `
+    if (!cars.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
 
     const model = await tx`
       SELECT v.category

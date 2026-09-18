@@ -163,4 +163,39 @@ describe('database booking constraints', () => {
       VALUES (${holidayDate}, ${`Database constraint ${suffix} duplicate holiday`}, TRUE)
     `, 'holidays_date_key')
   })
+
+  it('enforces data length and ban-state invariants at the database boundary', async () => {
+    await expectCheckViolation(sql`
+      UPDATE users
+      SET banned = FALSE, ban_reason = 'should not exist'
+      WHERE id = ${userId}
+    `, 'users_ban_reason_chk')
+
+    await expectCheckViolation(sql`
+      UPDATE users
+      SET banned = TRUE, ban_reason = repeat('x', 501), banned_at = now()
+      WHERE id = ${userId}
+    `, 'users_ban_reason_length_chk')
+
+    await expectCheckViolation(sql`
+      UPDATE bookings
+      SET notes = repeat('x', 1001)
+      WHERE id = (
+        SELECT id FROM bookings
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+        LIMIT 1
+      )
+    `, 'bookings_notes_length_chk')
+
+    await expectCheckViolation(sql`
+      INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+      VALUES ('2099-12-15', '15:00', repeat('x', 301), ${adminId})
+    `, 'blocked_slots_reason_length_chk')
+
+    await expectCheckViolation(sql`
+      INSERT INTO holidays (date, name, active)
+      VALUES ('2099-12-16', repeat('x', 151), TRUE)
+    `, 'holidays_name_length_chk')
+  })
 })

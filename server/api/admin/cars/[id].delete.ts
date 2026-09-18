@@ -1,4 +1,4 @@
-import { z } from 'zod'
+import { createError } from 'h3'
 import { requireAdmin } from '../../../utils/authorization'
 import { getDb } from '../../../utils/db'
 import { writeAuditLog } from '../../../utils/audit'
@@ -14,15 +14,23 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
   return db.begin(async (tx) => {
-    const cars = await tx`
-      SELECT id, user_id
+    const owners = await tx`
+      SELECT user_id
       FROM cars
       WHERE id = ${id}
       LIMIT 1
     `
-    if (!cars.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+    if (!owners.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
 
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${cars[0].user_id}`}))`
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${owners[0].user_id}`}))`
+
+    const cars = await tx`
+      SELECT id
+      FROM cars
+      WHERE id = ${id}
+      FOR UPDATE
+    `
+    if (!cars.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
 
     const active = await tx`
       SELECT 1 FROM bookings

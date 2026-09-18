@@ -32,20 +32,47 @@ export default defineEventHandler(async (event) => {
 
   return db.begin(async (tx: any) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${user.id}`}))`
+
     const [currentUser] = await tx`SELECT banned FROM users WHERE id = ${user.id} FOR SHARE`
-    if (!currentUser || currentUser.banned) throw createError({ statusCode: 403, statusMessage: 'CLIENT_BANNED', data: { code: 'CLIENT_BANNED' } })
+    if (!currentUser || currentUser.banned) {
+      throw createError({
+        statusCode: 403,
+        statusMessage: 'CLIENT_BANNED',
+        data: { code: 'CLIENT_BANNED' },
+      })
+    }
 
-    const owned = await tx`SELECT id, make, model FROM cars WHERE id = ${id} AND user_id = ${user.id} LIMIT 1`
-    if (!owned.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
+    const owned = await tx`
+      SELECT id, make, model
+      FROM cars
+      WHERE id = ${id} AND user_id = ${user.id}
+      FOR UPDATE
+    `
+    if (!owned.length) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'CAR_NOT_FOUND',
+        data: { code: 'CAR_NOT_FOUND' },
+      })
+    }
 
-  const models = await tx`
-    SELECT v.category
-    FROM vehicle_models v
-    JOIN vehicle_makes m ON m.id = v.make_id
-    WHERE m.name = ${body.make} AND v.name = ${body.model} AND m.active = TRUE AND v.active = TRUE
-    LIMIT 1
-  `
-  if (!models.length) throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL', data: { code: 'INVALID_VEHICLE_MODEL' } })
+    const models = await tx`
+      SELECT v.category
+      FROM vehicle_models v
+      JOIN vehicle_makes m ON m.id = v.make_id
+      WHERE m.name = ${body.make}
+        AND v.name = ${body.model}
+        AND m.active = TRUE
+        AND v.active = TRUE
+      LIMIT 1
+    `
+    if (!models.length) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'INVALID_VEHICLE_MODEL',
+        data: { code: 'INVALID_VEHICLE_MODEL' },
+      })
+    }
 
     const vehicleChanged = owned[0].make !== body.make || owned[0].model !== body.model
     if (vehicleChanged) {
@@ -65,25 +92,35 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-  try {
-    const rows = await tx`
-      UPDATE cars
-      SET make = ${body.make}, model = ${body.model}, registration_number = ${body.registrationNumber},
-          category = ${models[0].category}, updated_at = now()
-      WHERE id = ${id} AND user_id = ${user.id}
-      RETURNING id, make, model, registration_number, category, created_at, updated_at
-    `
-    if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
-    return { car: rows[0] }
-  } catch (error: any) {
-    if (error?.statusCode) throw error
-    if (error?.code === '23505') {
-      throw createError({
-        statusCode: 409,
-        statusMessage: 'REGISTRATION_ALREADY_EXISTS',
-        data: { code: 'REGISTRATION_ALREADY_EXISTS' },
-      })
+    try {
+      const rows = await tx`
+        UPDATE cars
+        SET make = ${body.make},
+            model = ${body.model},
+            registration_number = ${body.registrationNumber},
+            category = ${models[0].category},
+            updated_at = now()
+        WHERE id = ${id} AND user_id = ${user.id}
+        RETURNING id, make, model, registration_number, category, created_at, updated_at
+      `
+      if (!rows.length) {
+        throw createError({
+          statusCode: 404,
+          statusMessage: 'CAR_NOT_FOUND',
+          data: { code: 'CAR_NOT_FOUND' },
+        })
+      }
+      return { car: rows[0] }
+    } catch (error: any) {
+      if (error?.statusCode) throw error
+      if (error?.code === '23505') {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'REGISTRATION_ALREADY_EXISTS',
+          data: { code: 'REGISTRATION_ALREADY_EXISTS' },
+        })
+      }
+      throw error
     }
-    throw error  }
   })
 })
