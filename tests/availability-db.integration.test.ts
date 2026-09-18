@@ -64,6 +64,10 @@ describe('PostgreSQL availability integration', () => {
     expect(slots.find((slot) => slot.time === '11:00')?.state).toBe('blocked')
     expect(slots.find((slot) => slot.time === '11:00')?.reason).toBe('Integration test slot block')
 
+    const customerSlots = await getSlotAvailability(testDate, 'customer')
+    expect(customerSlots.find((slot) => slot.time === '11:00')?.state).toBe('blocked')
+    expect(customerSlots.find((slot) => slot.time === '11:00')?.reason).toBeUndefined()
+
     await sql`UPDATE bookings SET status = 'cancelled_customer' WHERE id = ${bookingId}`
     const afterCancel = await getSlotAvailability(testDate, 'admin')
     expect(afterCancel.find((slot) => slot.time === '10:00')?.state).toBe('available')
