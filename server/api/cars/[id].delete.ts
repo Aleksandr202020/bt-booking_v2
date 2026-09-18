@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { requireUnbannedUser } from '../../utils/authorization'
 import { getDb } from '../../utils/db'
+import { writeAuditLog } from '../../utils/audit'
 
 const uuidSchema = z.string().uuid()
 
@@ -52,6 +53,7 @@ export default defineEventHandler(async (event) => {
         RETURNING id
       `
       if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
+      await writeAuditLog({ actorId: user.id, action: 'car.deleted', targetId: rows[0].id }, tx)
       return { deleted: true, id: rows[0].id }
     } catch (error: any) {
       if (error?.statusCode) throw error
