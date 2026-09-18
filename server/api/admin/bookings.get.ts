@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { requireAdmin } from '../../utils/authorization'
 import { getDb } from '../../utils/db'
+import { isValidIsoDate } from '../../domain/booking/dates'
 
 const querySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -13,6 +14,9 @@ export default defineEventHandler(async (event) => {
   const parsed = querySchema.safeParse(getQuery(event))
   if (!parsed.success) throw createError({ statusCode: 400, statusMessage: 'INVALID_BOOKING_QUERY', data: { code: 'INVALID_BOOKING_QUERY' } })
   const query = parsed.data
+  if (query.date && !isValidIsoDate(query.date)) {
+    throw createError({ statusCode: 400, statusMessage: 'INVALID_DATE', data: { code: 'INVALID_DATE' } })
+  }
   const db = getDb()
   const rows = await db`
     SELECT b.id, b.user_id, b.car_id, b.booking_date, b.booking_time, b.price_cents, b.status, b.notes, b.created_at, b.updated_at,
