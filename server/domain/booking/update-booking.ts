@@ -258,6 +258,20 @@ export async function cancelAdminBooking(bookingId: string, auditActorId?: strin
               bookingDate: cancelled.booking_date,
               bookingTime: cancelled.booking_time,
               previousStatus: booking.status,
+              previous: {
+                userId: booking.user_id,
+                carId: booking.car_id,
+                bookingDate: booking.booking_date,
+                bookingTime: booking.booking_time,
+                status: booking.status,
+              },
+              current: {
+                userId: cancelled.user_id,
+                carId: cancelled.car_id,
+                bookingDate: cancelled.booking_date,
+                bookingTime: cancelled.booking_time,
+                status: cancelled.status,
+              },
             },
           })
         }
