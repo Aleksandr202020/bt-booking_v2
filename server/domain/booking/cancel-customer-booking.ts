@@ -34,7 +34,7 @@ export async function cancelCustomerBooking(bookingId: string, userId: string) {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${bookingDate}`}))`
 
     const existingRows = await tx`
-      SELECT id, user_id, booking_date, booking_time, status
+      SELECT id, user_id, car_id, booking_date, booking_time, price_cents, status, notes
       FROM bookings
       WHERE id = ${bookingId}
       FOR UPDATE
@@ -71,7 +71,7 @@ export async function cancelCustomerBooking(bookingId: string, userId: string) {
       WHERE id = ${booking.id}
         AND user_id = ${userId}
         AND status IN ('pending', 'confirmed')
-      RETURNING id, status, booking_date, booking_time
+      RETURNING id, user_id, car_id, status, booking_date, booking_time, price_cents, notes
     `
 
     if (!rows.length) {
