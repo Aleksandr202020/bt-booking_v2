@@ -49,7 +49,7 @@ jobs:
         run: npm run typecheck
 
       - name: Unit and integration tests
-        run: npm run test
+        run: npm run test -- --no-file-parallelism
 
       - name: Build
         run: npm run build
