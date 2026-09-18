@@ -42,7 +42,7 @@ describe('login rate limiting', () => {
     )).toBe(true)
 
     const [row] = await sql`SELECT attempts FROM login_rate_limits WHERE key = ${key}`
-    expect(Number(row.attempts)).toBe(20)
+    expect(Number(row.attempts)).toBe(10)
   })
 
   it('locks multiple rate-limit keys in deterministic order', async () => {
@@ -67,7 +67,7 @@ describe('login rate limiting', () => {
       ORDER BY key
     `
     expect(rows).toHaveLength(2)
-    expect(rows.every((row) => Number(row.attempts) === 20)).toBe(true)
+    expect(rows.every((row) => Number(row.attempts) === 10)).toBe(true)
 
     await resetLoginRateLimit([key, secondaryKey])
     const remaining = await sql`
