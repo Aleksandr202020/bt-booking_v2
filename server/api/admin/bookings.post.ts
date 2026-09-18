@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { requireAdmin } from '../../utils/authorization'
 import { createBooking } from '../../domain/booking/create-booking'
+import { isValidIsoDate } from '../../domain/booking/dates'
 
 const schema = z.object({
   userId: z.string().uuid(),
@@ -21,6 +22,8 @@ export default defineEventHandler(async (event) => {
       data: { code: 'INVALID_BOOKING_REQUEST' },
     })
   }
+
+  if (!isValidIsoDate(parsed.data.bookingDate)) throw createError({ statusCode: 400, statusMessage: 'INVALID_DATE', data: { code: 'INVALID_DATE' } })
 
   const booking = await createBooking({
     userId: parsed.data.userId,
