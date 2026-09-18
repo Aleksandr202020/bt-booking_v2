@@ -1,3 +1,4 @@
+import { createError } from 'h3'
 import { z } from 'zod'
 import { requireUnbannedUser } from '../../utils/authorization'
 import { getDb } from '../../utils/db'
@@ -10,7 +11,16 @@ const schema = z.object({
 
 export default defineEventHandler(async (event) => {
   const user = await requireUnbannedUser(event)
-  const body = schema.parse(await readBody(event))
+  const parsed = schema.safeParse(await readBody(event))
+  if (!parsed.success) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'INVALID_CAR_REQUEST',
+      data: { code: 'INVALID_CAR_REQUEST' },
+    })
+  }
+
+  const body = parsed.data
   const db = getDb()
 
   const models = await db`
@@ -25,10 +35,21 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL', data: { code: 'INVALID_VEHICLE_MODEL' } })
   }
 
-  const car = await db`
-    INSERT INTO cars (user_id, make, model, registration_number, category)
-    VALUES (${user.id}, ${body.make}, ${body.model}, ${body.registrationNumber}, ${models[0].category})
-    RETURNING id, make, model, registration_number, category, created_at, updated_at
-  `
-  return { car: car[0] }
+  try {
+    const car = await db`
+      INSERT INTO cars (user_id, make, model, registration_number, category)
+      VALUES (${user.id}, ${body.make}, ${body.model}, ${body.registrationNumber}, ${models[0].category})
+      RETURNING id, make, model, registration_number, category, created_at, updated_at
+    `
+    return { car: car[0] }
+  } catch (error: any) {
+    if (error?.code === '23505') {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'REGISTRATION_ALREADY_EXISTS',
+        data: { code: 'REGISTRATION_ALREADY_EXISTS' },
+      })
+    }
+    throw error
+  }
 })
