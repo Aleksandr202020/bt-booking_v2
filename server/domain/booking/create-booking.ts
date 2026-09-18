@@ -41,7 +41,7 @@ export async function createBooking(input: {
   if (isPastSlot(input.bookingDate, input.bookingTime)) fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
 
   const window = !input.isAdmin ? await getCustomerWindow() : null
-  if (window && (daysBetween(window.start, input.bookingDate) < 0 || daysBetween(window.start, input.bookingDate) > window.windowDays)) {
+  if (window && (daysBetween(lockedWindow.start, input.bookingDate) < 0 || daysBetween(lockedWindow.start, input.bookingDate) > window.windowDays)) {
     fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
   }
 
