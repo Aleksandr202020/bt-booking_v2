@@ -70,7 +70,7 @@ describe('PostgreSQL booking integrity', () => {
   })
 
   it('preserves the booked price when the car category changes later', async () => {
-    const bookingDate = '2099-12-27'
+    const bookingDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const bookingTime = '17:00'
 
     const booking = await createBooking({
