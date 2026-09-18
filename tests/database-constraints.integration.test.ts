@@ -151,6 +151,31 @@ describe('database booking constraints', () => {
     `, 'blocked_slots_slot_idx')
   })
 
+  it('rejects whole-day and slot-specific blocks from coexisting on the same date', async () => {
+    const wholeDayDate = '2099-12-17'
+    const slotDate = '2099-12-18'
+
+    await sql`
+      INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+      VALUES (${wholeDayDate}, NULL, ${`Database constraint ${suffix} whole-day conflict`}, ${adminId})
+    `
+
+    await expectCheckViolation(sql`
+      INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+      VALUES (${wholeDayDate}, '10:00', ${`Database constraint ${suffix} slot conflict`}, ${adminId})
+    `, 'blocked_slots_scope_conflict_chk')
+
+    await sql`
+      INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+      VALUES (${slotDate}, '11:00', ${`Database constraint ${suffix} slot first`}, ${adminId})
+    `
+
+    await expectCheckViolation(sql`
+      INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+      VALUES (${slotDate}, NULL, ${`Database constraint ${suffix} whole-day conflict`}, ${adminId})
+    `, 'blocked_slots_scope_conflict_chk')
+  })
+
   it('enforces one holiday row per date', async () => {
     const holidayDate = '2099-12-14'
 
