@@ -34,12 +34,12 @@ export default defineEventHandler(async (event) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${owners[0].user_id}`}))`
 
     const cars = await tx`
-      SELECT id, user_id, make, model
+      SELECT id, user_id, make, model, registration_number, category
       FROM cars
       WHERE id = ${id}
       FOR UPDATE
     `
-    if (!cars.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+    if (!cars.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND', data: { code: 'CAR_NOT_FOUND' } })
 
     const model = await tx`
       SELECT v.category
