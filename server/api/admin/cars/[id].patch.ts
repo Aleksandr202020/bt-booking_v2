@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
   return db.begin(async (tx) => {
     const cars = await tx`
-      SELECT id, user_id
+      SELECT id, user_id, make, model
       FROM cars
       WHERE id = ${id}
       LIMIT 1
@@ -44,6 +44,24 @@ export default defineEventHandler(async (event) => {
       LIMIT 1
     `
     if (!model.length) throw createError({ statusCode: 400, statusMessage: 'INVALID_VEHICLE_MODEL' })
+
+    const vehicleChanged = cars[0].make !== body.make || cars[0].model !== body.model
+    if (vehicleChanged) {
+      const activeBookings = await tx`
+        SELECT id
+        FROM bookings
+        WHERE car_id = ${id}
+          AND status IN ('pending', 'confirmed')
+        LIMIT 1
+      `
+      if (activeBookings.length) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'CAR_HAS_ACTIVE_BOOKING',
+          data: { code: 'CAR_HAS_ACTIVE_BOOKING' },
+        })
+      }
+    }
 
     try {
       const rows = await tx`
