@@ -51,6 +51,30 @@ async function expectCheckViolation(query: Promise<unknown>, constraint: string)
 }
 
 describe('database booking constraints', () => {
+  it('enforces numeric bounds for booking settings at the database boundary', async () => {
+    await expectCheckViolation(sql`
+      UPDATE app_settings
+      SET value = '"30"'::jsonb
+      WHERE key = 'customer_booking_window_days'
+    `, 'app_settings_booking_limits_chk')
+
+    await expectCheckViolation(sql`
+      UPDATE app_settings
+      SET value = '0'::jsonb
+      WHERE key = 'max_customer_bookings_in_window'
+    `, 'app_settings_booking_limits_chk')
+
+    await expectCheckViolation(sql`
+      UPDATE app_settings
+      SET value = '366'::jsonb
+      WHERE key = 'customer_booking_window_days'
+    `, 'app_settings_booking_limits_chk')
+
+    await sql`
+      UPDATE app_settings SET value = '30'::jsonb WHERE key = 'customer_booking_window_days'
+    `
+  })
+
   it('enforces valid one-hour booking and blocked-slot times at the database boundary', async () => {
     const bookingDate = '2099-12-10'
 
