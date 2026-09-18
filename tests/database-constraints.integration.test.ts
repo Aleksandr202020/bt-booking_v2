@@ -45,10 +45,34 @@ afterAll(async () => {
 })
 
 async function expectConstraintViolation(query: Promise<unknown>, constraint: string) {
-  await expect(query).rejects.toMatchObject({ code: '23505' })
+  await expect(query).rejects.toMatchObject({ code: '23505', constraint })
+}
+
+async function expectCheckViolation(query: Promise<unknown>, constraint: string) {
+  await expect(query).rejects.toMatchObject({ code: '23514', constraint })
 }
 
 describe('database booking constraints', () => {
+  it('enforces valid one-hour booking and blocked-slot times at the database boundary', async () => {
+    const { date: today } = getRigaNowParts()
+    const bookingDate = addCalendarDays(today, 9)
+
+    await expectCheckViolation(sql`
+      INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
+      VALUES (${userId}, ${carId}, ${bookingDate}, '08:00', 2500, 'pending')
+    `, 'bookings_booking_time_slot_chk')
+
+    await expectCheckViolation(sql`
+      INSERT INTO bookings (user_id, car_id, booking_date, booking_time, price_cents, status)
+      VALUES (${userId}, ${carId}, ${bookingDate}, '20:30', 2500, 'pending')
+    `, 'bookings_booking_time_slot_chk')
+
+    await expectCheckViolation(sql`
+      INSERT INTO blocked_slots (booking_date, booking_time, reason, created_by)
+      VALUES (${bookingDate}, '13:30', ${`Database constraint ${suffix} invalid slot`}, ${adminId})
+    `, 'blocked_slots_booking_time_slot_chk')
+  })
+
   it('enforces one active booking per date and time while allowing history rows', async () => {
     const { date: today } = getRigaNowParts()
     const bookingDate = addCalendarDays(today, 5)
