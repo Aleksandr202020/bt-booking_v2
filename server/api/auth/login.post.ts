@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   const rows = await db`
     SELECT id, name, email, phone, password_hash, role, banned, ban_reason, banned_at, created_at
     FROM users
-    WHERE email = ${body.email}
+    WHERE lower(email) = ${body.email}
     LIMIT 1
   `
   const user = rows[0]
