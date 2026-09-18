@@ -65,11 +65,11 @@ await sql.begin(async (tx) => {
     if (!make) continue
 
     const makeRows = await tx`
-    INSERT INTO vehicle_makes (name, source)
-    VALUES (${make}, ${SOURCE})
-    ON CONFLICT (name) DO UPDATE SET source = EXCLUDED.source
-    RETURNING id
-  `
+      INSERT INTO vehicle_makes (name, source)
+      VALUES (${make}, ${SOURCE})
+      ON CONFLICT (name) DO UPDATE SET source = EXCLUDED.source
+      RETURNING id
+    `
     const makeId = makeRows[0]?.id
     if (!makeId) continue
 
@@ -78,7 +78,7 @@ await sql.begin(async (tx) => {
       .filter(({ href }) => href.startsWith(makeHref))
 
     const uniqueModels = new Set()
-    for (const { text } of modelLinks {
+    for (const { text } of modelLinks) {
       const prefix = `${make} `
       const model = text.startsWith(prefix) ? text.slice(prefix.length).trim() : text.trim()
       if (!model || model.length > 80 || uniqueModels.has(model)) continue
@@ -86,15 +86,14 @@ await sql.begin(async (tx) => {
 
       const category = inferCategory(make, model)
       await tx`
-      INSERT INTO vehicle_models (make_id, name, category, source)
-      VALUES (${makeId}, ${model}, ${category}, ${SOURCE})
-      ON CONFLICT (make_id, name)
-      DO UPDATE SET category = EXCLUDED.category, source = EXCLUDED.source, active = TRUE
-    `
+        INSERT INTO vehicle_models (make_id, name, category, source)
+        VALUES (${makeId}, ${model}, ${category}, ${SOURCE})
+        ON CONFLICT (make_id, name)
+        DO UPDATE SET category = EXCLUDED.category, source = EXCLUDED.source, active = TRUE
+      `
       modelCount += 1
+    }
   }
-}
-
 })
 
 console.log(`SS.COM catalog sync complete: ${makeLinks.length} makes, ${modelCount} models.`)
