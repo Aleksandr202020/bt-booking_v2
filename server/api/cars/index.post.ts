@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
     try {
       const car = await tx`
         INSERT INTO cars (user_id, make, model, registration_number, category)
-        VALUES (${user.id}, ${body.make}, ${body.model}, ${models[0].category})
+        VALUES (${user.id}, ${body.make}, ${body.model}, ${body.registrationNumber}, ${models[0].category})
         RETURNING id, make, model, registration_number, category, created_at, updated_at
       `
       return { car: car[0] }
