@@ -8,7 +8,7 @@ if (!databaseUrl) throw new Error('DATABASE_URL is required for availability DB 
 const sql = postgres(databaseUrl, { prepare: false })
 const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const email = `availability-test-${suffix}@example.test`
-const testDate = '2099-11-15'
+const testDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 let userId: string
 let carId: string
 let bookingId: string
