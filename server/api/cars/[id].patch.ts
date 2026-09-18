@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { requireUnbannedUser } from '../../utils/authorization'
 import { getDb } from '../../utils/db'
+import { writeAuditLog } from '../../utils/audit'
 
 const schema = z.object({
   make: z.string().trim().min(1).max(80),
@@ -110,6 +111,7 @@ export default defineEventHandler(async (event) => {
           data: { code: 'CAR_NOT_FOUND' },
         })
       }
+      await writeAuditLog({ actorId: user.id, action: 'car.updated', targetId: rows[0].id, metadata: { previous: { make: owned[0].make, model: owned[0].model }, current: { make: rows[0].make, model: rows[0].model, registrationNumber: rows[0].registration_number, category: rows[0].category } } }, tx)
       return { car: rows[0] }
     } catch (error: any) {
       if (error?.statusCode) throw error
