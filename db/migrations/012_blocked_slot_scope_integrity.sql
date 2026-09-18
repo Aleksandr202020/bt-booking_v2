@@ -10,6 +10,7 @@ BEGIN
       SELECT 1
       FROM blocked_slots
       WHERE booking_date = NEW.booking_date
+        AND booking_time IS NOT NULL
         AND id <> NEW.id
     ) THEN
       RAISE EXCEPTION 'WHOLE_DAY_BLOCK_CONFLICT'
