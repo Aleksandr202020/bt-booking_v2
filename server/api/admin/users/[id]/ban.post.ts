@@ -20,6 +20,10 @@ export default defineEventHandler(async (event) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${userId}`}))`
     const rows = await tx`UPDATE users SET banned = TRUE, ban_reason = ${body.reason ?? null}, banned_at = now(), updated_at = now() WHERE id = ${userId}::uuid AND role = 'customer' RETURNING id, banned, ban_reason, banned_at`
     if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CUSTOMER_NOT_FOUND', data: { code: 'CUSTOMER_NOT_FOUND' } })
+
+    // Revoke every existing customer session immediately when the account is banned.
+    await tx`DELETE FROM sessions WHERE user_id = ${userId}::uuid`
+
     await writeAuditLog({ actorId: admin.id, action: 'BAN_USER', targetId: userId, metadata: { reason: body.reason ?? null } }, tx)
     return { user: rows[0] }
   })
