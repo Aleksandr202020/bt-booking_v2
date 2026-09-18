@@ -70,7 +70,7 @@ await sql.begin(async (tx) => {
     const makeRows = await tx`
       INSERT INTO vehicle_makes (name, source)
       VALUES (${make}, ${SOURCE})
-      ON CONFLICT (name) DO UPDATE SET source = EXCLUDED.source
+      ON CONFLICT (name) DO UPDATE SET source = EXCLUDED.source, active = TRUE
       RETURNING id
     `
     const makeId = makeRows[0]?.id
@@ -113,7 +113,7 @@ await sql.begin(async (tx) => {
     SELECT v.id, v.make_id, v.name
     FROM vehicle_models v
     JOIN vehicle_makes m ON m.id = v.make_id
-    WHERE v.source = ${SOURCE} AND v.active = TRUE AND m.active = TRUE
+    WHERE v.source = ${SOURCE} AND v.active = TRUE
   \`
   for (const row of staleModels) {
     if (!seenModelKeys.has(`${row.make_id}|${row.name}`)) {
