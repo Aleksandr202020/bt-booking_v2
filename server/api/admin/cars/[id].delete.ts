@@ -13,34 +13,46 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = getDb()
-  const active = await db`
-    SELECT 1 FROM bookings
-    WHERE car_id = ${id} AND status IN ('pending', 'confirmed')
-    LIMIT 1
-  `
-  if (active.length) {
-    throw createError({
-      statusCode: 409,
-      statusMessage: 'CAR_HAS_ACTIVE_BOOKING',
-      data: { code: 'CAR_HAS_ACTIVE_BOOKING' },
-    })
-  }
+  return db.begin(async (tx) => {
+    const cars = await tx`
+      SELECT id, user_id
+      FROM cars
+      WHERE id = ${id}
+      LIMIT 1
+    `
+    if (!cars.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
 
-  try {
-    const rows = await db`DELETE FROM cars WHERE id = ${id} RETURNING id`
-    if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-user:${cars[0].user_id}`}))`
 
-    await writeAuditLog({ actorId: admin.id, action: 'car.deleted', targetId: id })
-    return { ok: true }
-  } catch (error: any) {
-    if (error?.statusCode) throw error
-    if (error?.code === '23503') {
+    const active = await tx`
+      SELECT 1 FROM bookings
+      WHERE car_id = ${id} AND status IN ('pending', 'confirmed')
+      LIMIT 1
+    `
+    if (active.length) {
       throw createError({
         statusCode: 409,
-        statusMessage: 'CAR_HAS_BOOKING_HISTORY',
-        data: { code: 'CAR_HAS_BOOKING_HISTORY' },
+        statusMessage: 'CAR_HAS_ACTIVE_BOOKING',
+        data: { code: 'CAR_HAS_ACTIVE_BOOKING' },
       })
     }
-    throw error
-  }
+
+    try {
+      const rows = await tx`DELETE FROM cars WHERE id = ${id} RETURNING id`
+      if (!rows.length) throw createError({ statusCode: 404, statusMessage: 'CAR_NOT_FOUND' })
+
+      await writeAuditLog({ actorId: admin.id, action: 'car.deleted', targetId: id }, tx)
+      return { ok: true }
+    } catch (error: any) {
+      if (error?.statusCode) throw error
+      if (error?.code === '23503') {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'CAR_HAS_BOOKING_HISTORY',
+          data: { code: 'CAR_HAS_BOOKING_HISTORY' },
+        })
+      }
+      throw error
+    }
+  })
 })
