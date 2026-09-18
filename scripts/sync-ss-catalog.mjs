@@ -60,8 +60,8 @@ await sql.begin(async (tx) => {
   // must not leave a partially updated make/model catalog behind.
   await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:ss-catalog-sync'))`
 
-
-  const make = text.trim()
+  for (const { href, text } of makeLinks) {
+    const make = text.trim()
   if (!make) continue
 
   const makeRows = await tx`
