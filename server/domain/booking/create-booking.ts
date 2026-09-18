@@ -61,6 +61,24 @@ export async function createBooking(input: {
     if (!user) fail(BOOKING_ERROR_CODES.AUTH_REQUIRED, 401)
     if (user.banned) fail(BOOKING_ERROR_CODES.CLIENT_BANNED, 403)
 
+    // Re-check time and the customer booking window after acquiring the same
+    // user/date locks used by all booking writers. The early checks above are
+    // only fast rejection; this is the authoritative TOCTOU-safe validation.
+    if (isPastSlot(input.bookingDate, input.bookingTime)) {
+      fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
+    }
+
+    let lockedWindow: Awaited<ReturnType<typeof getCustomerWindow>> | null = null
+    if (!input.isAdmin) {
+      lockedWindow = await getCustomerWindow()
+      if (
+        daysBetween(lockedWindow.start, input.bookingDate) < 0
+        || daysBetween(lockedWindow.start, input.bookingDate) > lockedWindow.windowDays
+      ) {
+        fail(BOOKING_ERROR_CODES.BOOKING_DATE_OUT_OF_RANGE)
+      }
+    }
+
     const cars = await tx`
       SELECT id, user_id, make, model, category
       FROM cars
@@ -84,7 +102,7 @@ export async function createBooking(input: {
     `
     if (blocked.length) fail(BOOKING_ERROR_CODES.SLOT_BLOCKED)
 
-    if (window) {
+    if (lockedWindow) {
       const settings = await tx`
         SELECT key, value FROM app_settings
         WHERE key IN ('max_customer_bookings_in_window', 'max_customer_bookings_per_car_in_window')
@@ -97,7 +115,7 @@ export async function createBooking(input: {
         SELECT count(*)::int AS count FROM bookings
         WHERE user_id = ${input.userId}
           AND status IN ('pending', 'confirmed')
-          AND booking_date BETWEEN ${window.start} AND ${window.end}
+          AND booking_date BETWEEN ${lockedWindow.start} AND ${lockedWindow.end}
       `
       if (total[0].count >= maxTotal) fail(BOOKING_ERROR_CODES.BOOKING_LIMIT_REACHED)
 
