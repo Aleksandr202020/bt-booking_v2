@@ -59,7 +59,7 @@ export async function updateBooking(input: {
         // required before taking any row lock. All booking writers use advisory locks
         // before row locks; this prevents booking↔create/update deadlocks.
         const snapshotRows = await tx`
-          SELECT id, user_id, car_id, booking_date, booking_time, price_cents, status
+          SELECT id, user_id, car_id, booking_date, booking_time, price_cents, status, notes
           FROM bookings
           WHERE id = ${input.bookingId}
         `
@@ -171,6 +171,7 @@ export async function updateBooking(input: {
                   bookingTime: existing.booking_time,
                   status: existing.status,
                   priceCents: existing.price_cents,
+                  notes: existing.notes,
                 },
                 current: {
                   userId: updated.user_id,
@@ -179,6 +180,7 @@ export async function updateBooking(input: {
                   bookingTime: updated.booking_time,
                   status: updated.status,
                   priceCents: updated.price_cents,
+                  notes: updated.notes,
                 },
               },
             })
@@ -219,7 +221,7 @@ export async function cancelAdminBooking(bookingId: string, auditActorId?: strin
         await tx`SELECT pg_advisory_xact_lock(hashtext(${`booking-date:${snapshotDate}`}))`
 
         const existingRows = await tx`
-          SELECT id, user_id, car_id, booking_date, booking_time, status, notes
+          SELECT id, user_id, car_id, booking_date, booking_time, price_cents, status, notes
           FROM bookings
           WHERE id = ${bookingId}
           FOR UPDATE
@@ -264,6 +266,8 @@ export async function cancelAdminBooking(bookingId: string, auditActorId?: strin
                 bookingDate: booking.booking_date,
                 bookingTime: booking.booking_time,
                 status: booking.status,
+                priceCents: booking.price_cents,
+                notes: booking.notes,
               },
               current: {
                 userId: cancelled.user_id,
@@ -271,6 +275,8 @@ export async function cancelAdminBooking(bookingId: string, auditActorId?: strin
                 bookingDate: cancelled.booking_date,
                 bookingTime: cancelled.booking_time,
                 status: cancelled.status,
+                priceCents: cancelled.price_cents,
+                notes: cancelled.notes,
               },
             },
           })
