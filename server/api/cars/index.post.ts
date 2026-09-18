@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { requireUnbannedUser } from '../../utils/authorization'
 import { getDb } from '../../utils/db'
+import { writeAuditLog } from '../../utils/audit'
 
 const schema = z.object({
   make: z.string().trim().min(1).max(80),
@@ -52,6 +53,7 @@ export default defineEventHandler(async (event) => {
         VALUES (${user.id}, ${body.make}, ${body.model}, ${body.registrationNumber}, ${models[0].category})
         RETURNING id, make, model, registration_number, category, created_at, updated_at
       `
+      await writeAuditLog({ actorId: user.id, action: 'car.created', targetId: car[0].id, metadata: { make: car[0].make, model: car[0].model, registrationNumber: car[0].registration_number, category: car[0].category } }, tx)
       return { car: car[0] }
     } catch (error: any) {
       if (error?.code === '23505') {
