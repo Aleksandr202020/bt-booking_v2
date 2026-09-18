@@ -60,38 +60,38 @@ await sql.begin(async (tx) => {
   // must not leave a partially updated make/model catalog behind.
   await tx`SELECT pg_advisory_xact_lock(hashtext('bt-booking:ss-catalog-sync'))`
 
-  for (const { href, text } of makeLinks) {
+  for (const { href: makeHref, text } of makeLinks) {
     const make = text.trim()
-  if (!make) continue
+    if (!make) continue
 
-  const makeRows = await tx`
+    const makeRows = await tx`
     INSERT INTO vehicle_makes (name, source)
     VALUES (${make}, ${SOURCE})
     ON CONFLICT (name) DO UPDATE SET source = EXCLUDED.source
     RETURNING id
   `
-  const makeId = makeRows[0]?.id
-  if (!makeId) continue
+    const makeId = makeRows[0]?.id
+    if (!makeId) continue
 
-  const html = await fetchText(new URL(href, BASE).href)
-  const modelLinks = extractLinks(html)
-    .filter(({ href }) => href.startsWith(href))
+    const html = await fetchText(new URL(makeHref, BASE).href)
+    const modelLinks = extractLinks(html)
+      .filter(({ href }) => href.startsWith(makeHref))
 
-  const uniqueModels = new Set()
-  for (const { text } of modelLinks) {
-    const prefix = `${make} `
-    const model = text.startsWith(prefix) ? text.slice(prefix.length).trim() : text.trim()
-    if (!model || model.length > 80 || uniqueModels.has(model)) continue
-    uniqueModels.add(model)
+    const uniqueModels = new Set()
+    for (const { text } of modelLinks {
+      const prefix = `${make} `
+      const model = text.startsWith(prefix) ? text.slice(prefix.length).trim() : text.trim()
+      if (!model || model.length > 80 || uniqueModels.has(model)) continue
+      uniqueModels.add(model)
 
-    const category = inferCategory(make, model)
-    await tx`
+      const category = inferCategory(make, model)
+      await tx`
       INSERT INTO vehicle_models (make_id, name, category, source)
       VALUES (${makeId}, ${model}, ${category}, ${SOURCE})
       ON CONFLICT (make_id, name)
       DO UPDATE SET category = EXCLUDED.category, source = EXCLUDED.source, active = TRUE
     `
-    modelCount += 1
+      modelCount += 1
   }
 }
 
